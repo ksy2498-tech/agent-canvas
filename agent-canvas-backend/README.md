@@ -15,7 +15,6 @@ Update `.env` as needed:
 
 ```env
 DATABASE_URL=sqlite+aiosqlite:///./agent_canvas.db
-OPENAI_API_KEY=your-key-here
 ```
 
 ## Run

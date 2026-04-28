@@ -14,6 +14,7 @@ def build_chat_model(config: dict[str, Any], *, temperature: float | int | None 
     temperature = config.get("temperature", temperature if temperature is not None else 0)
 
     if provider in {"openai", "custom"}:
+        _require_node_api_key(api_key, config.get("provider") or "OpenAI")
         return ChatOpenAI(
             model=model,
             temperature=temperature,
@@ -22,6 +23,7 @@ def build_chat_model(config: dict[str, Any], *, temperature: float | int | None 
             default_headers=headers or None,
         )
     if provider in {"gemini", "google", "google gemini"}:
+        _require_node_api_key(api_key, config.get("provider") or "Gemini")
         try:
             from langchain_google_genai import ChatGoogleGenerativeAI
         except ImportError as exc:
@@ -30,6 +32,7 @@ def build_chat_model(config: dict[str, Any], *, temperature: float | int | None 
             ) from exc
         return ChatGoogleGenerativeAI(model=model, temperature=temperature, google_api_key=api_key)
     if provider in {"claude", "anthropic"}:
+        _require_node_api_key(api_key, config.get("provider") or "Claude")
         try:
             from langchain_anthropic import ChatAnthropic
         except ImportError as exc:
@@ -38,6 +41,15 @@ def build_chat_model(config: dict[str, Any], *, temperature: float | int | None 
             ) from exc
         return ChatAnthropic(model=model, temperature=temperature, api_key=api_key)
     raise ValueError(f"Unsupported LLM provider: {config.get('provider')}")
+
+
+def _require_node_api_key(api_key: Any, provider: str) -> None:
+    if isinstance(api_key, str) and api_key.strip():
+        return
+    raise ValueError(
+        f"{provider} API key is required in the node config. "
+        "Server environment variables are not used for LLM node credentials."
+    )
 
 
 def _default_model(provider: str) -> str:
