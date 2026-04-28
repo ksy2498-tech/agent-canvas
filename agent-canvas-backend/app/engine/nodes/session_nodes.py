@@ -5,7 +5,7 @@ from typing import Any
 
 from langchain_core.messages import messages_from_dict, messages_to_dict
 
-from app.engine.nodes._common import append_trace
+from app.engine.nodes._common import SAFE_BUILTINS, append_trace
 from app.engine.state import AgentState
 
 
@@ -20,12 +20,21 @@ def _ensure(path: Path) -> None:
         )
 
 
+def _session_id(config: dict[str, Any], state: AgentState) -> str | None:
+    expression = config.get("session_id_expression") or config.get("sessionIdExpression")
+    if expression:
+        value = eval(expression, {"__builtins__": SAFE_BUILTINS}, {"state": state})
+        return str(value) if value is not None else None
+    value = state.get("session_id") or config.get("session_id") or config.get("sessionId")
+    return str(value) if value else None
+
+
 def build_session_load_node(config: dict[str, Any]):
     async def node(state: AgentState) -> AgentState:
         path = _db_path(config)
         _ensure(path)
-        session_id = state.get("session_id") or config.get("session_id")
-        output_key = config.get("output_key", "messages")
+        session_id = _session_id(config, state)
+        output_key = config.get("output_key") or config.get("outputKey") or "messages"
         if not session_id:
             return append_trace(state, config.get("_node_id", "session_load"), config.get("_label", "Session Load"))
         with sqlite3.connect(path) as conn:
@@ -45,8 +54,8 @@ def build_session_save_node(config: dict[str, Any]):
     async def node(state: AgentState) -> AgentState:
         path = _db_path(config)
         _ensure(path)
-        session_id = state.get("session_id") or config.get("session_id")
-        keys = config.get("keys", ["messages"])
+        session_id = _session_id(config, state)
+        keys = config.get("keys") or config.get("keysToSave") or ["messages"]
         if session_id:
             payload = {}
             for key in keys:
@@ -60,4 +69,3 @@ def build_session_save_node(config: dict[str, Any]):
         return append_trace(state, config.get("_node_id", "session_save"), config.get("_label", "Session Save"))
 
     return node
-
