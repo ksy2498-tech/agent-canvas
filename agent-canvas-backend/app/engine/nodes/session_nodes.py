@@ -72,6 +72,13 @@ def _deserialize_value(key: str, value: Any) -> Any:
     return messages_from_dict(value) if key == "messages" and isinstance(value, list) else value
 
 
+def _deserialize_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: _deserialize_value(key, value)
+        for key, value in payload.items()
+    }
+
+
 def _merge_payload(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
     merged = dict(existing)
     for key, value in incoming.items():
@@ -89,7 +96,7 @@ def build_session_load_node(config: dict[str, Any]):
         path = _db_path(config)
         _ensure(path)
         session_id = _session_id(config, state)
-        output_key = config.get("output_key") or config.get("outputKey") or "messages"
+        output_key = config.get("output_key") or config.get("outputKey") or "loaded_session"
         if not session_id:
             return append_trace(state, config.get("_node_id", "session_load"), config.get("_label", "Session Load"))
         with sqlite3.connect(path) as conn:
@@ -97,25 +104,58 @@ def build_session_load_node(config: dict[str, Any]):
         if not row:
             return append_trace(state, config.get("_node_id", "session_load"), config.get("_label", "Session Load"))
         payload = json.loads(row[0])
+        deserialized_payload = _deserialize_payload(payload)
         if output_key in {"*", "__all__", "state"}:
-            return {**{key: _deserialize_value(key, value) for key, value in payload.items()}, **append_trace(state, config.get("_node_id", "session_load"), config.get("_label", "Session Load"), session_id=session_id)}
-        value = _path_value(payload, output_key)
-        if value is None:
             return {
-                **{key: _deserialize_value(key, item) for key, item in payload.items()},
+                **deserialized_payload,
                 **append_trace(
                     state,
                     config.get("_node_id", "session_load"),
                     config.get("_label", "Session Load"),
                     session_id=session_id,
-                    loaded="payload",
-                    missing_key=output_key,
+                    loaded="state",
                 ),
             }
+        if output_key in {"loaded_session", "session", "payload"}:
+            updates: AgentState = {
+                output_key: {
+                    "session_id": session_id,
+                    **deserialized_payload,
+                }
+            }
+            updates.update(
+                append_trace(
+                    state,
+                    config.get("_node_id", "session_load"),
+                    config.get("_label", "Session Load"),
+                    session_id=session_id,
+                    loaded=output_key,
+                )
+            )
+            return updates
+        value = _path_value(payload, output_key)
+        if value is None:
+            updates: AgentState = {
+                "loaded_session": {
+                    "session_id": session_id,
+                    **deserialized_payload,
+                }
+            }
+            updates.update(
+                append_trace(
+                    state,
+                    config.get("_node_id", "session_load"),
+                    config.get("_label", "Session Load"),
+                    session_id=session_id,
+                    loaded="loaded_session",
+                    missing_key=output_key,
+                )
+            )
+            return updates
         value = _deserialize_value(output_key, value)
         updates: AgentState = {}
         _assign_path(updates, output_key, value)
-        updates.update(append_trace(state, config.get("_node_id", "session_load"), config.get("_label", "Session Load"), session_id=session_id))
+        updates.update(append_trace(state, config.get("_node_id", "session_load"), config.get("_label", "Session Load"), session_id=session_id, loaded=output_key))
         return updates
 
     return node
