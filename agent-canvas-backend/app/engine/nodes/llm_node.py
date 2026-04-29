@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -16,6 +17,7 @@ def build_llm_node(config: dict[str, Any], mcp_servers: dict[str, Any]):
     tool_result_key = config.get("tool_result_key") or config.get("toolResultKey") or output_key
     tool_name_key = config.get("tool_name_key") or config.get("toolNameKey")
     tool_args_key = config.get("tool_args_key") or config.get("toolArgsKey")
+    tool_handling_mode = config.get("tool_handling_mode") or config.get("toolHandlingMode") or "bind-tools"
     update_current_output = config.get("update_current_output")
     if update_current_output is None:
         update_current_output = config.get("updateCurrentOutput", True)
@@ -46,17 +48,30 @@ def build_llm_node(config: dict[str, Any], mcp_servers: dict[str, Any]):
             return result_updates
 
         llm = build_chat_model(config)
+        tool_server_by_name = {}
         lc_tools = []
+        prompt_tool_specs = []
         for tool in auto_tools:
             server_id = _tool_value(tool, "server_id", "serverId")
+            tool_name = _tool_value(tool, "tool_name", "name")
             if server_id in mcp_servers:
                 await mcp_client.connect(mcp_servers[server_id])
-                lc_tools.extend(await mcp_client.as_langchain_tools(server_id))
-        if lc_tools:
+                server_tools = await mcp_client.list_tools(server_id)
+                matched = [item for item in server_tools if not tool_name or item.get("name") == tool_name]
+                prompt_tool_specs.extend(_tool_prompt_specs(server_id, matched))
+                for item in matched:
+                    if item.get("name"):
+                        tool_server_by_name[item["name"]] = server_id
+                if tool_handling_mode == "bind-tools":
+                    allowed = {tool_name} if tool_name else None
+                    lc_tools.extend(await mcp_client.as_langchain_tools(server_id, allowed_tool_names=allowed))
+        if lc_tools and tool_handling_mode == "bind-tools":
             llm = llm.bind_tools(lc_tools)
 
         messages = []
         system_prompt = config.get("system_prompt") or config.get("systemPrompt")
+        if prompt_tool_specs and tool_handling_mode == "prompt-only":
+            system_prompt = _append_prompt_tool_specs(system_prompt, prompt_tool_specs, output_key, tool_args_key)
         if system_prompt:
             messages.append(SystemMessage(content=system_prompt))
         messages.extend(state.get("messages", []))
@@ -66,7 +81,7 @@ def build_llm_node(config: dict[str, Any], mcp_servers: dict[str, Any]):
 
         produced_messages = [response]
         for call in getattr(response, "tool_calls", []) or []:
-            server_id = call.get("server_id") or config.get("tool_server_id") or config.get("toolServerId")
+            server_id = call.get("server_id") or config.get("tool_server_id") or config.get("toolServerId") or tool_server_by_name.get(call.get("name"))
             name = call.get("name")
             args = call.get("args") or {}
             if server_id in mcp_servers and name:
@@ -86,6 +101,31 @@ def build_llm_node(config: dict[str, Any], mcp_servers: dict[str, Any]):
         return updates
 
     return node
+
+
+def _append_prompt_tool_specs(system_prompt: str | None, tool_specs: list[dict[str, Any]], output_key: str, tool_args_key: str | None) -> str:
+    base = system_prompt or ""
+    instruction = (
+        "\n\nAvailable MCP tools are listed below. Use these specs to decide the next tool, but do not call tools directly. "
+        f"Return the selected tool name in state key `{output_key}`. "
+        f"If tool arguments are needed, return them for `{tool_args_key or 'tool_args'}` as JSON.\n"
+        f"MCP tool specs:\n{json.dumps(tool_specs, ensure_ascii=False, indent=2)}"
+    )
+    return base + instruction
+
+
+def _tool_prompt_specs(server_id: str, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    specs = []
+    for tool in tools:
+        specs.append(
+            {
+                "serverId": server_id,
+                "name": tool.get("name"),
+                "description": tool.get("description"),
+                "inputSchema": tool.get("inputSchema") or tool.get("input_schema") or tool.get("parameters") or {},
+            }
+        )
+    return specs
 
 
 def _select_tool_only_tools(tools: list[dict[str, Any]], state: AgentState, tool_name_key: str | None) -> list[dict[str, Any]]:
