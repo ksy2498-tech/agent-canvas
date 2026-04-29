@@ -30,8 +30,47 @@ function ToolRow({ tool, executionModes, onMode, onRemove }) {
         <div className="space-y-2 border-t border-slate-200 p-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
           <p>{tool.description || 'No description provided.'}</p>
           <pre className="max-h-40 overflow-auto rounded bg-slate-100 p-2 dark:bg-slate-950">
-            {JSON.stringify(tool.inputSchema || {}, null, 2)}
+            {JSON.stringify(tool.inputSchema || tool.input_schema || {}, null, 2)}
           </pre>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ServerTools({ server, scope, onPick }) {
+  const fetchTools = useMCPStore((state) => state.fetchTools);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const tools = Array.isArray(server.tools) ? server.tools : [];
+
+  const load = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await fetchTools(server, scope);
+    } catch (err) {
+      setError(err?.message || 'Could not fetch tools');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 space-y-2">
+      {tools.map((tool) => (
+        <label key={tool.name} className="flex items-center gap-2 text-xs">
+          <input type="checkbox" onChange={(e) => e.target.checked && onPick(server, tool)} />
+          {tool.name}
+        </label>
+      ))}
+      {!tools.length ? (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-500">No tools loaded.</p>
+          <button className="secondary-btn text-xs" onClick={load} disabled={loading}>
+            {loading ? 'Fetching...' : 'Fetch tools'}
+          </button>
+          {error ? <p className="text-xs text-red-500">{error}</p> : null}
         </div>
       ) : null}
     </div>
@@ -41,6 +80,7 @@ function ToolRow({ tool, executionModes, onMode, onRemove }) {
 function Picker({ onClose, onPick, graphId }) {
   const [tab, setTab] = useState('global');
   const { globalServers, graphServers } = useMCPStore();
+  const scope = tab === 'global' ? 'global' : graphId;
   const servers = tab === 'global' ? globalServers : graphServers[graphId] || [];
   const picker = (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40" onMouseDown={onClose}>
@@ -63,15 +103,7 @@ function Picker({ onClose, onPick, graphId }) {
                 <span className={`mr-2 inline-block h-2 w-2 rounded-full ${server.status === 'connected' ? 'bg-green-500' : server.status === 'error' ? 'bg-red-500' : 'bg-slate-400'}`} />
                 {server.name} <span className="text-xs text-slate-500">({server.transport})</span>
               </summary>
-              <div className="mt-3 space-y-2">
-                {(Array.isArray(server.tools) ? server.tools : []).map((tool) => (
-                  <label key={tool.name} className="flex items-center gap-2 text-xs">
-                    <input type="checkbox" onChange={(e) => e.target.checked && onPick(server, tool)} />
-                    {tool.name}
-                  </label>
-                ))}
-                {!(Array.isArray(server.tools) && server.tools.length) ? <p className="text-xs text-slate-500">No tools loaded.</p> : null}
-              </div>
+              <ServerTools server={server} scope={scope} onPick={onPick} />
             </details>
           ))}
           {!servers.length ? <div className="rounded-md border border-dashed border-slate-300 p-4 text-xs text-slate-500 dark:border-slate-700">No MCP servers configured for this scope.</div> : null}
@@ -96,6 +128,7 @@ export default function MCPToolsSection({ nodeId, executionModes = defaultModes 
       ...attachedTools,
       {
         ...tool,
+        inputSchema: tool.inputSchema || tool.input_schema || {},
         serverId: server.id,
         serverName: server.name,
         executionMode: executionModes[0],
