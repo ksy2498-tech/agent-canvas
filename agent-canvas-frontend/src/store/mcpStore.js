@@ -18,6 +18,24 @@ const normalizeServers = (payload) => {
   };
 };
 
+const withUiFields = (server) => ({
+  ...server,
+  ...(server.config || {}),
+  status: server.status || 'disconnected',
+  tools: server.tools || [],
+});
+
+const upsertServer = (state, server, scope = 'global') => {
+  const next = withUiFields(server);
+  if (scope === 'global') {
+    const exists = state.globalServers.some((s) => s.id === next.id);
+    return { globalServers: exists ? updateServer(state.globalServers, next.id, next) : [...state.globalServers, next] };
+  }
+  const current = state.graphServers[scope] || [];
+  const exists = current.some((s) => s.id === next.id);
+  return { graphServers: { ...state.graphServers, [scope]: exists ? updateServer(current, next.id, next) : [...current, next] } };
+};
+
 export const useMCPStore = create((set, get) => ({
   globalServers: [],
   graphServers: {},
@@ -26,37 +44,32 @@ export const useMCPStore = create((set, get) => ({
     const data = await client.listMCPServers();
     set(normalizeServers(data));
   },
+  saveServer: async (server, scope = 'global') => {
+    const saved = await client.saveMCPServer(server, scope);
+    const next = { ...server, ...saved, status: 'disconnected', tools: server.tools || [] };
+    set((state) => upsertServer(state, next, scope));
+    return next;
+  },
   addServer: async (server, scope = 'global') => {
     const saved = await client.saveMCPServer(server, scope);
-    const next = saved.server || { ...server, id: server.id || crypto.randomUUID(), status: 'disconnected', tools: server.tools || [] };
-    set((state) =>
-      scope === 'global'
-        ? { globalServers: [...state.globalServers, next] }
-        : { graphServers: { ...state.graphServers, [scope]: [...(state.graphServers[scope] || []), next] } },
-    );
+    const next = { ...server, ...saved, status: 'disconnected', tools: server.tools || [] };
+    set((state) => upsertServer(state, next, scope));
+    return next;
   },
   upsertLocalServer: (server, scope = 'global') =>
-    set((state) => {
-      const next = { ...server, id: server.id || crypto.randomUUID(), tools: server.tools || [] };
-      if (scope === 'global') {
-        const exists = state.globalServers.some((s) => s.id === next.id);
-        return { globalServers: exists ? updateServer(state.globalServers, next.id, next) : [...state.globalServers, next] };
-      }
-      const current = state.graphServers[scope] || [];
-      const exists = current.some((s) => s.id === next.id);
-      return { graphServers: { ...state.graphServers, [scope]: exists ? updateServer(current, next.id, next) : [...current, next] } };
-    }),
+    set((state) => upsertServer(state, server, scope)),
   removeServer: async (id, scope = 'global') => {
-    await client.deleteMCPServer(id, scope);
+    await client.deleteMCPServer(id);
     set((state) =>
       scope === 'global'
         ? { globalServers: state.globalServers.filter((server) => server.id !== id) }
         : { graphServers: { ...state.graphServers, [scope]: (state.graphServers[scope] || []).filter((server) => server.id !== id) } },
     );
   },
-  testConnection: async (id) => {
-    const result = await client.testMCPConnection(id);
+  testConnection: async (server, scope = 'global') => {
+    const result = await client.testMCPConnection(server, scope);
     const status = result.status || 'connected';
+    const id = server.id;
     set((state) => ({
       globalServers: updateServer(state.globalServers, id, { status }),
       graphServers: Object.fromEntries(
@@ -65,8 +78,9 @@ export const useMCPStore = create((set, get) => ({
     }));
     return result;
   },
-  fetchTools: async (id) => {
-    const tools = normalizeTools(await client.fetchMCPTools(id));
+  fetchTools: async (server, scope = 'global') => {
+    const tools = normalizeTools(await client.fetchMCPTools(server, scope));
+    const id = server.id;
     set((state) => ({
       globalServers: updateServer(state.globalServers, id, { tools }),
       graphServers: Object.fromEntries(
