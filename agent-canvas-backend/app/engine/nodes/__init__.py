@@ -4,6 +4,7 @@ from app.engine.nodes.condition_node import build_condition_node
 from app.engine.nodes.db_nodes import build_db_query_node
 from app.engine.nodes.http_node import build_http_node
 from app.engine.nodes.llm_node import build_llm_node
+from app.engine.nodes.mcp_tool_node import build_mcp_tool_node
 from app.engine.nodes.nlp_node import build_nlp_node
 from app.engine.nodes.router_node import build_router_node
 from app.engine.nodes.session_nodes import build_session_load_node, build_session_save_node
@@ -18,6 +19,7 @@ __all__ = [
     "build_db_query_node",
     "build_http_node",
     "build_llm_node",
+    "build_mcp_tool_node",
     "build_nlp_node",
     "build_router_node",
     "build_session_load_node",
