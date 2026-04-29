@@ -11,7 +11,15 @@ const defaultModels = {
 
 export default function LLMNodePanel({ node }) {
   const updateNodeData = useGraphStore((state) => state.updateNodeData);
-  const data = { id: node.id, provider: 'OpenAI', temperature: 0.7, ...node.data };
+  const data = {
+    id: node.id,
+    provider: 'OpenAI',
+    temperature: 0.7,
+    outputKey: 'current_output',
+    toolResultKey: 'current_output',
+    updateCurrentOutput: true,
+    ...node.data,
+  };
   const setData = (patch) => updateNodeData(node.id, patch);
   const provider = data.provider || 'OpenAI';
   const setProvider = (nextProvider) =>
@@ -28,8 +36,16 @@ export default function LLMNodePanel({ node }) {
       <Field label="Model"><TextInput value={data.model || defaultModels[provider]} onChange={(model) => setData({ model })} /></Field>
       {provider === 'Custom' ? <Field label="Custom Headers"><KeyValueField value={data.headers} onChange={(headers) => setData({ headers })} /></Field> : null}
       <Field label="System Prompt"><Textarea rows={6} value={data.systemPrompt} onChange={(systemPrompt) => setData({ systemPrompt })} /></Field>
+      <Field label="Output key"><TextInput value={data.outputKey} onChange={(outputKey) => setData({ outputKey })} placeholder="current_output or selected_tool" /></Field>
+      <Field label="Tool name state key"><TextInput value={data.toolNameKey} onChange={(toolNameKey) => setData({ toolNameKey })} placeholder="selected_tool" /></Field>
+      <Field label="Tool args state key"><TextInput value={data.toolArgsKey} onChange={(toolArgsKey) => setData({ toolArgsKey })} placeholder="tool_args" /></Field>
+      <Field label="Tool result key"><TextInput value={data.toolResultKey} onChange={(toolResultKey) => setData({ toolResultKey })} placeholder="tool_result" /></Field>
+      <label className="flex items-center gap-2 text-xs">
+        <input type="checkbox" checked={Boolean(data.updateCurrentOutput)} onChange={(e) => setData({ updateCurrentOutput: e.target.checked })} />
+        Also update current_output
+      </label>
       <Field label={`Temperature ${data.temperature}`}><input className="w-full" type="range" min="0" max="2" step="0.1" value={data.temperature} onChange={(e) => setData({ temperature: Number(e.target.value) })} /></Field>
-      <p className="text-xs text-slate-500">auto means LLM decides when to call, tool-only skips LLM entirely</p>
+      <p className="text-xs text-slate-500">auto means LLM decides when to call, tool-only skips LLM entirely. Use output keys to pass specific node results to later nodes.</p>
     </BaseFields>
   );
 }
