@@ -17,6 +17,7 @@ from app.engine.nodes import (
     build_http_node,
     build_input_transform_node,
     build_llm_node,
+    build_mcp_tool_node,
     build_nlp_node,
     build_output_format_node,
     build_router_node,
@@ -152,6 +153,8 @@ def _build_node(node, graph_nodes, mcp_servers):
         return passthrough
     if node_type in {"llm", "llmnode"}:
         return build_llm_node(config, mcp_servers)
+    if node_type in {"mcptool", "mcp_tool", "mcptoolcall", "mcp_tool_call"}:
+        return build_mcp_tool_node(config, mcp_servers)
     if node_type in {"code", "codenode"}:
         return build_code_node(config, mcp_servers)
     if node_type in {"router", "routernode"}:
