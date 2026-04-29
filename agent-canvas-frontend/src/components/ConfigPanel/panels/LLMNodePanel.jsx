@@ -2,6 +2,7 @@ import { BaseFields, Field, KeyValueField, SelectInput, Textarea, TextInput } fr
 import { useGraphStore } from '../../../store/graphStore';
 
 const providers = ['OpenAI', 'Gemini', 'Claude', 'Custom'];
+const toolHandlingModes = ['bind-tools', 'prompt-only'];
 const defaultModels = {
   OpenAI: 'gpt-4o-mini',
   Custom: 'gpt-4o-mini',
@@ -17,6 +18,7 @@ export default function LLMNodePanel({ node }) {
     temperature: 0.7,
     outputKey: 'current_output',
     toolResultKey: 'current_output',
+    toolHandlingMode: 'bind-tools',
     updateCurrentOutput: true,
     ...node.data,
   };
@@ -35,6 +37,7 @@ export default function LLMNodePanel({ node }) {
       <Field label="API Key"><TextInput type="password" value={data.apiKey} onChange={(apiKey) => setData({ apiKey })} /></Field>
       <Field label="Model"><TextInput value={data.model || defaultModels[provider]} onChange={(model) => setData({ model })} /></Field>
       {provider === 'Custom' ? <Field label="Custom Headers"><KeyValueField value={data.headers} onChange={(headers) => setData({ headers })} /></Field> : null}
+      <Field label="Tool handling mode"><SelectInput value={data.toolHandlingMode} onChange={(toolHandlingMode) => setData({ toolHandlingMode })} options={toolHandlingModes} /></Field>
       <Field label="System Prompt"><Textarea rows={6} value={data.systemPrompt} onChange={(systemPrompt) => setData({ systemPrompt })} /></Field>
       <Field label="Output key"><TextInput value={data.outputKey} onChange={(outputKey) => setData({ outputKey })} placeholder="current_output or selected_tool" /></Field>
       <Field label="Tool name state key"><TextInput value={data.toolNameKey} onChange={(toolNameKey) => setData({ toolNameKey })} placeholder="selected_tool" /></Field>
@@ -45,7 +48,7 @@ export default function LLMNodePanel({ node }) {
         Also update current_output
       </label>
       <Field label={`Temperature ${data.temperature}`}><input className="w-full" type="range" min="0" max="2" step="0.1" value={data.temperature} onChange={(e) => setData({ temperature: Number(e.target.value) })} /></Field>
-      <p className="text-xs text-slate-500">auto means LLM decides when to call, tool-only skips LLM entirely. Use output keys to pass specific node results to later nodes.</p>
+      <p className="text-xs text-slate-500">bind-tools uses native model tool calling. prompt-only injects MCP tool specs into the prompt for models without tool binding, such as gpt-oss-style models.</p>
     </BaseFields>
   );
 }
