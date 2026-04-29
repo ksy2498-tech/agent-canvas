@@ -126,8 +126,16 @@ export const toMCPServerPayload = (server, scope = 'global') => ({
         },
 });
 
+const isPersistedMCPServer = (server) => Boolean(server?.id && server?.created_at);
+
 export const listMCPServers = () => api.get('/mcp/servers').then((r) => r.data);
-export const saveMCPServer = (server, scope) => api.post('/mcp/servers', toMCPServerPayload(server, scope)).then((r) => r.data);
+export const saveMCPServer = (server, scope) => {
+  const payload = toMCPServerPayload(server, scope);
+  if (isPersistedMCPServer(server)) {
+    return api.put(`/mcp/servers/${server.id}`, payload).then((r) => r.data);
+  }
+  return api.post('/mcp/servers', payload).then((r) => r.data);
+};
 export const deleteMCPServer = (id) => api.delete(`/mcp/servers/${id}`).then((r) => r.data);
 export const testMCPConnection = (server, scope) => api.post('/mcp/test', toMCPServerPayload(server, scope)).then((r) => r.data);
 export const fetchMCPTools = (server, scope) => api.post('/mcp/tools/test', toMCPServerPayload(server, scope)).then((r) => r.data);
