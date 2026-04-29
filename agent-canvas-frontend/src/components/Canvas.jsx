@@ -6,6 +6,7 @@ import { nodeDefinitions } from './nodes/nodeFactory.jsx';
 import StartNode from './nodes/StartNode';
 import EndNode from './nodes/EndNode';
 import LLMNode from './nodes/LLMNode';
+import MCPToolNode from './nodes/MCPToolNode';
 import CodeNode from './nodes/CodeNode';
 import RouterNode from './nodes/RouterNode';
 import ConditionNode from './nodes/ConditionNode';
@@ -24,7 +25,7 @@ import OutputFormatNode from './nodes/OutputFormatNode';
 import NLPNode from './nodes/NLPNode';
 
 const nodeTypes = {
-  start: StartNode, end: EndNode, llm: LLMNode, code: CodeNode, router: RouterNode, condition: ConditionNode, breakpoint: BreakpointNode,
+  start: StartNode, end: EndNode, llm: LLMNode, mcpTool: MCPToolNode, code: CodeNode, router: RouterNode, condition: ConditionNode, breakpoint: BreakpointNode,
   sessionLoad: SessionLoadNode, sessionSave: SessionSaveNode, stateSet: StateSetNode, stateGet: StateGetNode, dbConnection: DBConnectionNode, dbQuery: DBQueryNode,
   artifactStore: ArtifactStoreNode, artifactLoad: ArtifactLoadNode, httpRequest: HTTPRequestNode, inputTransform: InputTransformNode, outputFormat: OutputFormatNode, nlp: NLPNode,
 };
