@@ -103,10 +103,33 @@ export const downloadCode = async (id, filename = 'agent-graph.zip') => {
   URL.revokeObjectURL(url);
 };
 
+const rowsToObject = (rows = []) => {
+  if (!Array.isArray(rows)) return rows || {};
+  return Object.fromEntries(rows.filter((row) => row.key).map((row) => [row.key, row.value]));
+};
+
+export const toMCPServerPayload = (server, scope = 'global') => ({
+  name: server.name,
+  scope,
+  transport: server.transport,
+  config:
+    server.transport === 'stdio'
+      ? {
+          command: server.command || '',
+          args: server.args || [],
+          env: rowsToObject(server.env || []),
+          cwd: server.cwd || undefined,
+        }
+      : {
+          url: server.url || '',
+          headers: rowsToObject(server.headers || []),
+        },
+});
+
 export const listMCPServers = () => api.get('/mcp/servers').then((r) => r.data);
-export const saveMCPServer = (server, scope) => api.post('/mcp/servers', { server, scope }).then((r) => r.data);
-export const deleteMCPServer = (id, scope) => api.delete(`/mcp/servers/${id}`, { data: { scope } }).then((r) => r.data);
-export const testMCPConnection = (id) => api.post('/mcp/test', { id }).then((r) => r.data);
-export const fetchMCPTools = (id) => api.get(`/mcp/servers/${id}/tools`).then((r) => r.data);
+export const saveMCPServer = (server, scope) => api.post('/mcp/servers', toMCPServerPayload(server, scope)).then((r) => r.data);
+export const deleteMCPServer = (id) => api.delete(`/mcp/servers/${id}`).then((r) => r.data);
+export const testMCPConnection = (server, scope) => api.post('/mcp/test', toMCPServerPayload(server, scope)).then((r) => r.data);
+export const fetchMCPTools = (server, scope) => api.post('/mcp/tools/test', toMCPServerPayload(server, scope)).then((r) => r.data);
 export const testDBConnection = (connectionString, dbType) =>
   api.post('/db/test', { connectionString, dbType }).then((r) => r.data);
