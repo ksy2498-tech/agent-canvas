@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -48,11 +49,13 @@ class MCPClient:
         result = await conn.client.call_tool(tool_name, args or {})
         return self._serialize(result)
 
-    async def as_langchain_tools(self, server_id: str) -> list[BaseTool]:
+    async def as_langchain_tools(self, server_id: str, allowed_tool_names: set[str] | None = None) -> list[BaseTool]:
         tools = []
         for tool_def in await self.list_tools(server_id):
             name = tool_def.get("name", "mcp_tool")
-            description = tool_def.get("description") or f"MCP tool {name}"
+            if allowed_tool_names and name not in allowed_tool_names:
+                continue
+            description = _tool_description(tool_def)
 
             async def _call(payload: dict[str, Any] | None = None, *, _name=name) -> Any:
                 return await self.call_tool(server_id, _name, payload or {})
@@ -125,6 +128,14 @@ class MCPClient:
         if hasattr(value, "text"):
             return value.text
         return value
+
+
+def _tool_description(tool_def: dict[str, Any]) -> str:
+    description = tool_def.get("description") or f"MCP tool {tool_def.get('name', 'mcp_tool')}"
+    schema = tool_def.get("inputSchema") or tool_def.get("input_schema") or tool_def.get("parameters")
+    if schema:
+        return f"{description}\nInput schema: {json.dumps(schema, ensure_ascii=False)}"
+    return description
 
 
 mcp_client = MCPClient()
