@@ -35,8 +35,10 @@ export default function Canvas() {
   const [edgeMenu, setEdgeMenu] = useState(null);
   const { graphId, nodes, edges, setNodes, setEdges, selectNode, pushHistory, saveGraph, edgeBreakpoints, toggleBreakpointOnEdge, undo, setPanelMode } = useGraphStore();
   const selectedNodeRef = useRef(null);
+  const selectedEdgeRef = useRef(null);
 
   useEffect(() => { selectedNodeRef.current = nodes.find((n) => n.selected); }, [nodes]);
+  useEffect(() => { selectedEdgeRef.current = edges.find((e) => e.selected); }, [edges]);
   useEffect(() => {
     const timer = setTimeout(() => {
       if (nodes.length && graphId !== 'local-graph') saveGraph({ validate: false }).catch(() => {});
@@ -76,11 +78,22 @@ export default function Canvas() {
       if (event.key === 'Escape') setPanelMode(null);
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') { event.preventDefault(); saveGraph().then(() => toast.success('Graph saved')).catch(() => {}); }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); undo(); }
-      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedNodeRef.current) {
-        const id = selectedNodeRef.current.id;
-        pushHistory();
-        setNodes(nodes.filter((n) => n.id !== id));
-        setEdges(edges.filter((e) => e.source !== id && e.target !== id));
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        const selectedNode = selectedNodeRef.current;
+        const selectedEdge = selectedEdgeRef.current;
+        if (selectedNode) {
+          const id = selectedNode.id;
+          event.preventDefault();
+          pushHistory();
+          setNodes(nodes.filter((n) => n.id !== id));
+          setEdges(edges.filter((e) => e.source !== id && e.target !== id));
+          return;
+        }
+        if (selectedEdge) {
+          event.preventDefault();
+          pushHistory();
+          setEdges(edges.filter((e) => e.id !== selectedEdge.id));
+        }
       }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c') selectedNodeRef.current && localStorage.setItem('copiedNode', JSON.stringify(selectedNodeRef.current));
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
@@ -106,7 +119,8 @@ export default function Canvas() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={(_, node) => selectNode(node.id)}
-        onPaneClick={() => selectNode(null)}
+        onEdgeClick={(_, edge) => { selectNode(null); setEdges(edges.map((item) => ({ ...item, selected: item.id === edge.id }))); }}
+        onPaneClick={() => { selectNode(null); setEdges(edges.map((item) => ({ ...item, selected: false }))); }}
         onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }}
         onDrop={(event) => {
           event.preventDefault();
