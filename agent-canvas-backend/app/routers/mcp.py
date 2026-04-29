@@ -1,12 +1,35 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import crud, schemas
+from app import crud, models, schemas
 from app.database import get_db
-from app.mcp.client import mcp_client
+from app.mcp.client import MCPClient, mcp_client
 
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
+
+
+def _draft_server(payload: schemas.MCPServerCreate) -> models.MCPServer:
+    return models.MCPServer(
+        id="__draft__",
+        name=payload.name,
+        scope=payload.scope,
+        transport=payload.transport,
+        config=payload.config,
+    )
+
+
+async def _test_draft_server(payload: schemas.MCPServerCreate) -> dict:
+    client = MCPClient()
+    server = _draft_server(payload)
+    try:
+        await client.connect(server)
+        tools = await client.list_tools(server.id)
+        return {"status": "ok", "tools": tools}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc), "tools": []}
+    finally:
+        await client.disconnect(server.id)
 
 
 @router.get("/servers", response_model=list[schemas.MCPServerRead])
@@ -38,16 +61,13 @@ async def delete_server(server_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/test")
-async def test_server(payload: schemas.MCPTestRequest, db: AsyncSession = Depends(get_db)):
-    server = await crud.get_mcp_server(db, payload.id)
-    if server is None:
-        raise HTTPException(status_code=404, detail="MCP server not found")
-    try:
-        await mcp_client.connect(server)
-        tools = await mcp_client.list_tools(server.id)
-        return {"status": "ok", "tools": tools}
-    except Exception as exc:
-        return {"status": "error", "message": str(exc), "tools": []}
+async def test_server(payload: schemas.MCPServerCreate):
+    return await _test_draft_server(payload)
+
+
+@router.post("/tools/test")
+async def test_server_tools(payload: schemas.MCPServerCreate):
+    return await _test_draft_server(payload)
 
 
 @router.get("/servers/{server_id}/tools")

@@ -9,17 +9,21 @@ const emptyServer = { name: '', transport: 'stdio', command: '', args: [], url: 
 
 function ServerEditor({ server, scope }) {
   const [draft, setDraft] = useState(server);
-  const { upsertLocalServer, removeServer, testConnection, fetchTools } = useMCPStore();
+  const { saveServer, removeServer, testConnection, fetchTools } = useMCPStore();
   const save = () => {
-    upsertLocalServer(draft, scope);
-    toast.success('MCP server saved locally');
+    saveServer(draft, scope)
+      .then((saved) => {
+        setDraft(saved);
+        toast.success('MCP server saved');
+      })
+      .catch(() => toast.error('MCP server save failed'));
   };
   return (
     <div className="space-y-3 rounded-md border border-slate-200 p-3 dark:border-slate-700">
       <div className="flex items-center gap-2">
         <span className={`h-2 w-2 rounded-full ${draft.status === 'connected' ? 'bg-green-500' : draft.status === 'error' ? 'bg-red-500' : 'bg-slate-400'}`} />
         <input className="field" value={draft.name} placeholder="Server name" onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-        <button className="icon-btn" onClick={() => removeServer(draft.id, scope).catch(() => upsertLocalServer({ ...draft, deleted: true }, scope))}><Trash2 size={16} /></button>
+        <button className="icon-btn" onClick={() => removeServer(draft.id, scope).catch(() => toast.error('Delete failed'))}><Trash2 size={16} /></button>
       </div>
       <select className="field" value={draft.transport} onChange={(e) => setDraft({ ...draft, transport: e.target.value })}>
         <option value="stdio">stdio</option>
@@ -37,8 +41,8 @@ function ServerEditor({ server, scope }) {
         </>
       )}
       <div className="flex gap-2">
-        <button className="secondary-btn" onClick={() => testConnection(draft.id).then(() => toast.success('Connection tested')).catch(() => toast.error('Connection failed'))}>Test Connection</button>
-        <button className="secondary-btn" onClick={() => fetchTools(draft.id).catch(() => toast.error('Could not fetch tools'))}>Fetch Tools</button>
+        <button className="secondary-btn" onClick={() => testConnection(draft, scope).then(() => toast.success('Connection tested')).catch(() => toast.error('Connection failed'))}>Test Connection</button>
+        <button className="secondary-btn" onClick={() => fetchTools(draft, scope).catch(() => toast.error('Could not fetch tools'))}>Fetch Tools</button>
         <button className="primary-btn" onClick={save}>Save</button>
       </div>
     </div>
