@@ -151,6 +151,12 @@ export const useGraphStore = create((set, get) => ({
       });
     }
     if (!nodes.some((n) => n.type === 'end')) violations.push('Graph must contain at least 1 End node.');
+    edges.forEach((edge) => {
+      const source = nodes.find((node) => node.id === edge.source);
+      const target = nodes.find((node) => node.id === edge.target);
+      if (target?.type === 'start') addNodeError(target.id, 'Start cannot have incoming edges.');
+      if (source?.type === 'end') addNodeError(source.id, 'End cannot have outgoing edges.');
+    });
     nodes.forEach((node) => {
       const connected = edges.some((edge) => edge.source === node.id || edge.target === node.id);
       if (!connected && nodes.length > 1) addNodeError(node.id, `${node.data?.label || node.type} is isolated.`);

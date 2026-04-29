@@ -5,6 +5,7 @@ import { nodeDefinitions } from './nodes/nodeFactory.jsx';
 const groups = [
   ['Control', ['start', 'end']],
   ['LLM', ['llm']],
+  ['MCP', ['mcpTool']],
   ['Logic', ['code', 'router', 'condition']],
   ['Session / State', ['sessionLoad', 'sessionSave', 'stateSet', 'stateGet']],
   ['Database', ['dbConnection', 'dbQuery']],

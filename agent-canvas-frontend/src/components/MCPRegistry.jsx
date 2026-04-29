@@ -21,16 +21,26 @@ function ServerEditor({ server, scope }) {
   };
   const test = () => {
     testConnection(draft, scope)
-      .then(() => toast.success('Connection succeeded'))
-      .catch((error) => toast.error(errorMessage(error, 'Connection failed')));
+      .then(() => {
+        setDraft((current) => ({ ...current, status: 'connected' }));
+        toast.success('Connection succeeded');
+      })
+      .catch((error) => {
+        setDraft((current) => ({ ...current, status: 'error' }));
+        toast.error(errorMessage(error, 'Connection failed'));
+      });
   };
   const fetch = () => {
     fetchTools(draft, scope)
       .then((tools) => {
         const count = Array.isArray(tools) ? tools.length : 0;
+        setDraft((current) => ({ ...current, tools, status: 'connected' }));
         toast.success(`Fetched ${count} tool${count === 1 ? '' : 's'}`);
       })
-      .catch((error) => toast.error(errorMessage(error, 'Could not fetch tools')));
+      .catch((error) => {
+        setDraft((current) => ({ ...current, status: 'error' }));
+        toast.error(errorMessage(error, 'Could not fetch tools'));
+      });
   };
   return (
     <div className="space-y-3 rounded-md border border-slate-200 p-3 dark:border-slate-700">
@@ -42,6 +52,7 @@ function ServerEditor({ server, scope }) {
       <select className="field" value={draft.transport} onChange={(e) => setDraft({ ...draft, transport: e.target.value })}>
         <option value="stdio">stdio</option>
         <option value="sse">sse</option>
+        <option value="streamable-http">streamable-http</option>
       </select>
       {draft.transport === 'stdio' ? (
         <>
@@ -50,7 +61,7 @@ function ServerEditor({ server, scope }) {
         </>
       ) : (
         <>
-          <input className="field" placeholder="SSE URL" value={draft.url || ''} onChange={(e) => setDraft({ ...draft, url: e.target.value })} />
+          <input className="field" placeholder={draft.transport === 'sse' ? 'SSE URL' : 'HTTP URL'} value={draft.url || ''} onChange={(e) => setDraft({ ...draft, url: e.target.value })} />
           <KeyValueEditor value={draft.headers || []} onChange={(headers) => setDraft({ ...draft, headers })} />
         </>
       )}

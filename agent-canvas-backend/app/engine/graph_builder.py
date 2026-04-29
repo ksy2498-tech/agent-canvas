@@ -108,6 +108,7 @@ async def build_and_run(
         "query": query,
         "messages": [HumanMessage(content=query)],
         "current_output": query,
+        "node_results": {},
         "metadata": {},
         "session_id": None,
         "artifact_refs": {},
@@ -130,8 +131,15 @@ async def build_and_run(
                         "label": node.label,
                         "status": "ok",
                         "output_preview": str(state.get("current_output", ""))[:200],
+                        "node_results": state.get("node_results", {}),
+                        "update": update or {},
                     }
-        yield {"type": "done", "output": state.get("current_output", ""), "trace": state.get("trace", [])}
+        yield {
+            "type": "done",
+            "output": state.get("current_output", ""),
+            "trace": state.get("trace", []),
+            "node_results": state.get("node_results", {}),
+        }
     except Exception as exc:
         yield {"type": "error", "message": str(exc), "nodeId": None}
 
@@ -190,12 +198,19 @@ def _build_node(node, graph_nodes, mcp_servers):
 
 def _validate_graph_structure(nodes: list[Any], edges: list[Any]) -> list[str]:
     node_ids = {node.id for node in nodes}
+    node_by_id = {node.id: node for node in nodes}
     errors = []
     for edge in edges:
         if edge.source_node_id not in node_ids:
             errors.append(f"edge {edge.id} source node {edge.source_node_id} does not exist")
         if edge.target_node_id not in node_ids:
             errors.append(f"edge {edge.id} target node {edge.target_node_id} does not exist")
+        source = node_by_id.get(edge.source_node_id)
+        target = node_by_id.get(edge.target_node_id)
+        if target and target.node_type.lower() == "start":
+            errors.append(f"edge {edge.id} cannot target Start node {target.id}")
+        if source and source.node_type.lower() == "end":
+            errors.append(f"edge {edge.id} cannot start from End node {source.id}")
     return errors
 
 

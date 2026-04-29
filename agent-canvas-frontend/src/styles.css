@@ -40,6 +40,31 @@ body {
   background: #475569;
 }
 
+.react-flow__handle.node-handle {
+  width: 8px;
+  height: 8px;
+  border: 2px solid white;
+  background: #475569;
+}
+
+.react-flow__handle.node-handle::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  background: transparent;
+}
+
+.react-flow__handle.node-handle:hover,
+.react-flow__handle.node-handle.connectingfrom,
+.react-flow__handle.node-handle.connectingto {
+  background: #2563eb;
+}
+
 .dark .react-flow__controls,
 .dark .react-flow__minimap {
   background: #111827;

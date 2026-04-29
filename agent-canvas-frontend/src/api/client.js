@@ -119,10 +119,12 @@ export const toMCPServerPayload = (server, scope = 'global') => ({
           args: server.args || [],
           env: rowsToObject(server.env || []),
           cwd: server.cwd || undefined,
+          tools: server.tools || [],
         }
       : {
           url: server.url || '',
           headers: rowsToObject(server.headers || []),
+          tools: server.tools || [],
         },
 });
 

@@ -7,6 +7,7 @@ export const categoryColors = {
   start: '#22c55e',
   end: '#ef4444',
   llm: '#3b82f6',
+  mcp: '#14b8a6',
   code: '#f97316',
   router: '#f97316',
   condition: '#f97316',
@@ -58,6 +59,7 @@ function BaseNode({ id, data, selected, icon: Icon, label, category = 'io', chil
   const color = categoryColors[category] || '#6b7280';
   const hasError = data?.validationError;
   const running = runningNodeId === id || data?.status === 'running';
+  const connectionTarget = data?.connectionTarget;
 
   const closeMenu = () => setMenu(null);
   const duplicate = () => {
@@ -93,16 +95,17 @@ function BaseNode({ id, data, selected, icon: Icon, label, category = 'io', chil
           'group relative min-w-[180px] rounded-lg border bg-white shadow-node transition dark:bg-slate-900',
           selected ? 'ring-2 ring-blue-400' : '',
           running ? 'ring-4 ring-yellow-300/80' : '',
+          connectionTarget ? 'ring-4 ring-blue-400/70 ring-offset-2 ring-offset-slate-50 dark:ring-offset-slate-950' : '',
           hasError ? 'border-dashed border-red-500' : 'border-slate-200 dark:border-slate-700',
           category === 'breakpoint' ? 'animate-pulseBorder' : '',
         ].join(' ')}
         style={{ borderLeft: `6px solid ${color}` }}
       >
         {[Position.Top, Position.Bottom, Position.Left, Position.Right].map((position) => (
-          <Handle key={`${position}-target`} type="target" position={position} id={`${position}-target`} />
+          <Handle key={`${position}-target`} className="node-handle" type="target" position={position} id={`${position}-target`} />
         ))}
         {[Position.Top, Position.Bottom, Position.Left, Position.Right].map((position) => (
-          <Handle key={`${position}-source`} type="source" position={position} id={`${position}-source`} />
+          <Handle key={`${position}-source`} className="node-handle" type="source" position={position} id={`${position}-source`} />
         ))}
 
         <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:text-slate-100">

@@ -10,8 +10,8 @@ const replaceServer = (servers, originalId, server) => {
 const normalizeTools = (payload) => (Array.isArray(payload) ? payload : payload?.tools || []);
 const applyToolCache = (server, toolCache = {}) => {
   const next = withUiFields(server);
-  const cachedTools = toolCache[next.id];
-  return cachedTools ? { ...next, tools: cachedTools } : next;
+  const hasCachedTools = Object.prototype.hasOwnProperty.call(toolCache, next.id);
+  return hasCachedTools ? { ...next, tools: toolCache[next.id] } : next;
 };
 const normalizeServers = (payload, toolCache = {}) => {
   if (Array.isArray(payload)) {
@@ -31,11 +31,12 @@ const normalizeServers = (payload, toolCache = {}) => {
 };
 
 function withUiFields(server) {
+  const tools = server.tools || server.config?.tools || [];
   return {
     ...server,
     ...(server.config || {}),
-    status: server.status || 'disconnected',
-    tools: server.tools || [],
+    status: server.status || (tools.length ? 'connected' : 'disconnected'),
+    tools,
   };
 }
 
@@ -83,23 +84,23 @@ export const useMCPStore = create((set, get) => ({
   },
   saveServer: async (server, scope = 'global') => {
     const originalId = server.id;
-    const saved = await client.saveMCPServer(server, scope);
     const tools = server.tools || get().toolCache[originalId] || [];
-    const next = { ...server, ...saved, status: 'disconnected', tools };
+    const saved = await client.saveMCPServer({ ...server, tools }, scope);
+    const next = { ...server, ...saved, status: server.status || (tools.length ? 'connected' : 'disconnected'), tools };
     set((state) => ({
       ...replaceSavedServer(state, originalId, next, scope),
-      toolCache: originalId && originalId !== saved.id ? { ...state.toolCache, [saved.id]: tools } : state.toolCache,
+      toolCache: { ...state.toolCache, ...(originalId ? { [originalId]: tools } : {}), [saved.id]: tools },
     }));
     return withUiFields(next);
   },
   addServer: async (server, scope = 'global') => {
     const originalId = server.id;
-    const saved = await client.saveMCPServer(server, scope);
     const tools = server.tools || get().toolCache[originalId] || [];
-    const next = { ...server, ...saved, status: 'disconnected', tools };
+    const saved = await client.saveMCPServer({ ...server, tools }, scope);
+    const next = { ...server, ...saved, status: server.status || (tools.length ? 'connected' : 'disconnected'), tools };
     set((state) => ({
       ...replaceSavedServer(state, originalId, next, scope),
-      toolCache: originalId && originalId !== saved.id ? { ...state.toolCache, [saved.id]: tools } : state.toolCache,
+      toolCache: { ...state.toolCache, ...(originalId ? { [originalId]: tools } : {}), [saved.id]: tools },
     }));
     return withUiFields(next);
   },

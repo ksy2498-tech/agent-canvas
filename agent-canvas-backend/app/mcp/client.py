@@ -84,12 +84,12 @@ class MCPClient:
                 server_config["env"] = server.config["env"]
             if server.config.get("cwd"):
                 server_config["cwd"] = server.config["cwd"]
-        elif server.transport == "sse":
+        elif server.transport in {"sse", "streamable-http"}:
             url = server.config.get("url")
             if not url:
-                raise ValueError("sse MCP server requires config.url")
+                raise ValueError(f"{server.transport} MCP server requires config.url")
             server_config = {
-                "transport": "sse",
+                "transport": server.transport,
                 "url": url,
                 "headers": server.config.get("headers", {}),
             }

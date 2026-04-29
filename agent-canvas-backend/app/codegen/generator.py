@@ -151,11 +151,11 @@ def _agent_py(graph_spec: dict[str, Any]) -> str:
                     server_config["env"] = config["env"]
                 if config.get("cwd"):
                     server_config["cwd"] = config["cwd"]
-            elif server.get("transport") == "sse":
+            elif server.get("transport") in {{"sse", "streamable-http"}}:
                 if not config.get("url"):
-                    raise ValueError("sse MCP server requires config.url")
+                    raise ValueError(f"{{server.get('transport')}} MCP server requires config.url")
                 server_config = {{
-                    "transport": "sse",
+                    "transport": server.get("transport"),
                     "url": config.get("url"),
                     "headers": config.get("headers", {{}}),
                 }}

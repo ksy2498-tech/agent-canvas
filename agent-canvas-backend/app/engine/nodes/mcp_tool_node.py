@@ -33,7 +33,7 @@ def build_mcp_tool_node(config: dict[str, Any], mcp_servers: dict[str, Any]):
         result = await mcp_client.call_tool(server_id, tool_name, args)
         output = result if isinstance(result, str) else str(result)
         updates: AgentState = {
-            tool_result_key: result,
+            "node_results": {tool_result_key: result},
             **append_trace(state, node_id, label, tool=tool_name, output_preview=output[:200]),
         }
         if update_current_output or tool_result_key == "current_output":
@@ -62,7 +62,15 @@ def _tool_args(state: AgentState, config: dict[str, Any], tool_args_key: str | N
 def _state_value(state: AgentState, key: str | None) -> Any:
     if not key:
         return None
-    value: Any = state
+    direct = _path_value(state, key)
+    if direct is not None:
+        return direct
+    return _path_value(state.get("node_results", {}), key)
+
+
+def _path_value(value: Any, key: str | None) -> Any:
+    if not key:
+        return None
     for part in str(key).split("."):
         if isinstance(value, dict):
             value = value.get(part)

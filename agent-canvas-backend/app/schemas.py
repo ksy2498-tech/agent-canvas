@@ -63,7 +63,7 @@ class RunRequest(BaseModel):
 class MCPServerCreate(BaseModel):
     name: str
     scope: str = "global"
-    transport: Literal["stdio", "sse"]
+    transport: Literal["stdio", "sse", "streamable-http"]
     config: dict[str, Any] = Field(default_factory=dict)
 
 
