@@ -49,9 +49,6 @@ export function Textarea({ value, onChange, rows = 4, placeholder }) {
 export function BaseFields({ data, setData, children, mcpModes }) {
   return (
     <div className="space-y-4">
-      <Field label="Label">
-        <TextInput value={data.label} onChange={(label) => setData({ label })} />
-      </Field>
       {children}
       {mcpModes ? <MCPToolsSection nodeId={data.id} executionModes={mcpModes} /> : null}
     </div>
@@ -59,10 +56,7 @@ export function BaseFields({ data, setData, children, mcpModes }) {
 }
 
 export function LabelOnlyPanel({ node, includeMcp = false }) {
-  const updateNodeData = useGraphStore((state) => state.updateNodeData);
-  return (
-    <BaseFields data={{ id: node.id, ...node.data }} setData={(patch) => updateNodeData(node.id, patch)} mcpModes={includeMcp ? ['tool-only'] : null} />
-  );
+  return <BaseFields data={{ id: node.id, ...node.data }} mcpModes={includeMcp ? ['tool-only'] : null} />;
 }
 
 export function KeyValueField({ value, onChange, typed = false }) {
