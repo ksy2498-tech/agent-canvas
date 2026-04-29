@@ -8,19 +8,24 @@ const replaceServer = (servers, originalId, server) => {
   return replaced.some((item) => item.id === next.id) ? replaced : [...replaced, next];
 };
 const normalizeTools = (payload) => (Array.isArray(payload) ? payload : payload?.tools || []);
-const normalizeServers = (payload) => {
+const applyToolCache = (server, toolCache = {}) => {
+  const next = withUiFields(server);
+  const cachedTools = toolCache[next.id];
+  return cachedTools ? { ...next, tools: cachedTools } : next;
+};
+const normalizeServers = (payload, toolCache = {}) => {
   if (Array.isArray(payload)) {
     return {
-      globalServers: payload.filter((server) => server.scope === 'global').map(withUiFields),
+      globalServers: payload.filter((server) => server.scope === 'global').map((server) => applyToolCache(server, toolCache)),
       graphServers: payload
         .filter((server) => server.scope !== 'global')
-        .reduce((groups, server) => ({ ...groups, [server.scope]: [...(groups[server.scope] || []), withUiFields(server)] }), {}),
+        .reduce((groups, server) => ({ ...groups, [server.scope]: [...(groups[server.scope] || []), applyToolCache(server, toolCache)] }), {}),
     };
   }
   return {
-    globalServers: (payload?.globalServers || []).map(withUiFields),
+    globalServers: (payload?.globalServers || []).map((server) => applyToolCache(server, toolCache)),
     graphServers: Object.fromEntries(
-      Object.entries(payload?.graphServers || {}).map(([scope, servers]) => [scope, servers.map(withUiFields)]),
+      Object.entries(payload?.graphServers || {}).map(([scope, servers]) => [scope, servers.map((server) => applyToolCache(server, toolCache))]),
     ),
   };
 };
@@ -70,34 +75,44 @@ const assertOk = (result, fallbackMessage) => {
 export const useMCPStore = create((set, get) => ({
   globalServers: [],
   graphServers: {},
+  toolCache: {},
 
   loadServers: async () => {
     const data = await client.listMCPServers();
-    set(normalizeServers(data));
+    set((state) => normalizeServers(data, state.toolCache));
   },
   saveServer: async (server, scope = 'global') => {
     const originalId = server.id;
     const saved = await client.saveMCPServer(server, scope);
-    const next = { ...server, ...saved, status: 'disconnected', tools: server.tools || [] };
-    set((state) => replaceSavedServer(state, originalId, next, scope));
+    const tools = server.tools || get().toolCache[originalId] || [];
+    const next = { ...server, ...saved, status: 'disconnected', tools };
+    set((state) => ({
+      ...replaceSavedServer(state, originalId, next, scope),
+      toolCache: originalId && originalId !== saved.id ? { ...state.toolCache, [saved.id]: tools } : state.toolCache,
+    }));
     return withUiFields(next);
   },
   addServer: async (server, scope = 'global') => {
     const originalId = server.id;
     const saved = await client.saveMCPServer(server, scope);
-    const next = { ...server, ...saved, status: 'disconnected', tools: server.tools || [] };
-    set((state) => replaceSavedServer(state, originalId, next, scope));
+    const tools = server.tools || get().toolCache[originalId] || [];
+    const next = { ...server, ...saved, status: 'disconnected', tools };
+    set((state) => ({
+      ...replaceSavedServer(state, originalId, next, scope),
+      toolCache: originalId && originalId !== saved.id ? { ...state.toolCache, [saved.id]: tools } : state.toolCache,
+    }));
     return withUiFields(next);
   },
   upsertLocalServer: (server, scope = 'global') =>
     set((state) => upsertServer(state, server, scope)),
   removeServer: async (id, scope = 'global') => {
     await client.deleteMCPServer(id);
-    set((state) =>
-      scope === 'global'
-        ? { globalServers: state.globalServers.filter((server) => server.id !== id) }
-        : { graphServers: { ...state.graphServers, [scope]: (state.graphServers[scope] || []).filter((server) => server.id !== id) } },
-    );
+    set((state) => {
+      const { [id]: _removed, ...toolCache } = state.toolCache;
+      return scope === 'global'
+        ? { globalServers: state.globalServers.filter((server) => server.id !== id), toolCache }
+        : { graphServers: { ...state.graphServers, [scope]: (state.graphServers[scope] || []).filter((server) => server.id !== id) }, toolCache };
+    });
   },
   testConnection: async (server, scope = 'global') => {
     try {
@@ -113,7 +128,10 @@ export const useMCPStore = create((set, get) => ({
     try {
       const result = assertOk(await client.fetchMCPTools(server, scope), 'Could not fetch tools');
       const tools = normalizeTools(result);
-      set((state) => updateServerEverywhere(state, server.id, { tools, status: 'connected' }));
+      set((state) => ({
+        ...updateServerEverywhere(state, server.id, { tools, status: 'connected' }),
+        toolCache: { ...state.toolCache, [server.id]: tools },
+      }));
       return tools;
     } catch (error) {
       set((state) => updateServerEverywhere(state, server.id, { status: 'error' }));
