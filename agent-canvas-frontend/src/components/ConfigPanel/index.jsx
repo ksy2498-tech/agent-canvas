@@ -4,6 +4,7 @@ import { nodeDefinitions } from '../nodes/nodeFactory.jsx';
 import StartNodePanel from './panels/StartNodePanel';
 import EndNodePanel from './panels/EndNodePanel';
 import LLMNodePanel from './panels/LLMNodePanel';
+import MCPToolPanel from './panels/MCPToolPanel';
 import CodeNodePanel from './panels/CodeNodePanel';
 import RouterNodePanel from './panels/RouterNodePanel';
 import ConditionNodePanel from './panels/ConditionNodePanel';
@@ -26,6 +27,7 @@ const panels = {
   start: StartNodePanel,
   end: EndNodePanel,
   llm: LLMNodePanel,
+  mcpTool: MCPToolPanel,
   code: CodeNodePanel,
   router: RouterNodePanel,
   condition: ConditionNodePanel,
