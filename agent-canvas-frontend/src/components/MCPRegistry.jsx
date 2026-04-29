@@ -6,6 +6,7 @@ import { useMCPStore } from '../store/mcpStore';
 import KeyValueEditor from './ConfigPanel/shared/KeyValueEditor';
 
 const emptyServer = { name: '', transport: 'stdio', command: '', args: [], url: '', headers: [], status: 'disconnected', tools: [] };
+const errorMessage = (error, fallback) => error?.message || fallback;
 
 function ServerEditor({ server, scope }) {
   const [draft, setDraft] = useState(server);
@@ -16,7 +17,20 @@ function ServerEditor({ server, scope }) {
         setDraft(saved);
         toast.success('MCP server saved');
       })
-      .catch(() => toast.error('MCP server save failed'));
+      .catch((error) => toast.error(errorMessage(error, 'MCP server save failed')));
+  };
+  const test = () => {
+    testConnection(draft, scope)
+      .then(() => toast.success('Connection succeeded'))
+      .catch((error) => toast.error(errorMessage(error, 'Connection failed')));
+  };
+  const fetch = () => {
+    fetchTools(draft, scope)
+      .then((tools) => {
+        const count = Array.isArray(tools) ? tools.length : 0;
+        toast.success(`Fetched ${count} tool${count === 1 ? '' : 's'}`);
+      })
+      .catch((error) => toast.error(errorMessage(error, 'Could not fetch tools')));
   };
   return (
     <div className="space-y-3 rounded-md border border-slate-200 p-3 dark:border-slate-700">
@@ -41,8 +55,8 @@ function ServerEditor({ server, scope }) {
         </>
       )}
       <div className="flex gap-2">
-        <button className="secondary-btn" onClick={() => testConnection(draft, scope).then(() => toast.success('Connection tested')).catch(() => toast.error('Connection failed'))}>Test Connection</button>
-        <button className="secondary-btn" onClick={() => fetchTools(draft, scope).catch(() => toast.error('Could not fetch tools'))}>Fetch Tools</button>
+        <button className="secondary-btn" onClick={test}>Test Connection</button>
+        <button className="secondary-btn" onClick={fetch}>Fetch Tools</button>
         <button className="primary-btn" onClick={save}>Save</button>
       </div>
     </div>
