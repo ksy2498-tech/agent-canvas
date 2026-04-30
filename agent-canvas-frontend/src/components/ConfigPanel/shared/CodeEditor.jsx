@@ -7,11 +7,16 @@ export default function CodeEditor({ value, onChange, language = 'python', heigh
 
   return (
     <div
-      className="overflow-hidden rounded-md border border-slate-200 dark:border-slate-700"
+      className="nodrag nopan nowheel overflow-hidden rounded-md border border-slate-200 dark:border-slate-700"
       onMouseDown={stopCanvasEvent}
+      onMouseDownCapture={stopCanvasEvent}
       onPointerDown={stopCanvasEvent}
+      onPointerDownCapture={stopCanvasEvent}
       onClick={stopCanvasEvent}
+      onClickCapture={stopCanvasEvent}
       onDoubleClick={stopCanvasEvent}
+      onDoubleClickCapture={stopCanvasEvent}
+      onWheel={stopCanvasEvent}
     >
       <Editor
         height={height}
