@@ -32,6 +32,7 @@ export default function LLMNodePanel({ node }) {
     id: node.id,
     provider: 'OpenAI',
     temperature: 0.7,
+    inputKey: 'query',
     outputKey: 'current_output',
     toolResultKey: 'current_output',
     toolHandlingMode: 'bind-tools',
@@ -66,6 +67,7 @@ export default function LLMNodePanel({ node }) {
       </div>
       {useTools ? <Field label="Tool handling mode"><SelectInput value={toolHandlingMode} onChange={(nextToolHandlingMode) => setData({ toolHandlingMode: nextToolHandlingMode })} options={toolHandlingModes} /></Field> : null}
       <Field label="System Prompt"><Textarea rows={6} value={data.systemPrompt} onChange={(systemPrompt) => setData({ systemPrompt })} /></Field>
+      <Field label="Input state key"><TextInput value={data.inputKey} onChange={(inputKey) => setData({ inputKey })} placeholder="query, current_output, node_results.some_key" /></Field>
       <Field label="Output key"><TextInput value={data.outputKey} onChange={(outputKey) => setData({ outputKey })} placeholder="current_output or selected_tool" /></Field>
       {useTools ? <Field label="Tool name state key"><TextInput value={data.toolNameKey} onChange={(toolNameKey) => setData({ toolNameKey })} placeholder="selected_tool" /></Field> : null}
       {useTools ? <Field label="Tool args state key"><TextInput value={data.toolArgsKey} onChange={(toolArgsKey) => setData({ toolArgsKey })} placeholder="tool_args" /></Field> : null}
@@ -75,7 +77,7 @@ export default function LLMNodePanel({ node }) {
         Also update current_output
       </label> : null}
       <Field label={`Temperature ${data.temperature}`}><input className="w-full" type="range" min="0" max="2" step="0.1" value={data.temperature} onChange={(e) => setData({ temperature: Number(e.target.value) })} /></Field>
-      <p className="text-xs text-slate-500">Turn on tools only when this LLM should use or select MCP tools. bind-tools uses native model tool calling; prompt-only selects a tool and args for a following MCP Tool Call node.</p>
+      <p className="text-xs text-slate-500">Input state key controls the user message sent to the LLM. Turn on tools only when this LLM should use or select MCP tools.</p>
     </BaseFields>
   );
 }
