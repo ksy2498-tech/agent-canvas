@@ -13,6 +13,8 @@ import SessionLoadPanel from './panels/SessionLoadPanel';
 import SessionSavePanel from './panels/SessionSavePanel';
 import StateSetPanel from './panels/StateSetPanel';
 import StateGetPanel from './panels/StateGetPanel';
+import RuntimeSetPanel from './panels/RuntimeSetPanel';
+import RuntimeGetPanel from './panels/RuntimeGetPanel';
 import DBConnectionPanel from './panels/DBConnectionPanel';
 import DBQueryPanel from './panels/DBQueryPanel';
 import ArtifactStorePanel from './panels/ArtifactStorePanel';
@@ -36,6 +38,8 @@ const panels = {
   sessionSave: SessionSavePanel,
   stateSet: StateSetPanel,
   stateGet: StateGetPanel,
+  runtimeSet: RuntimeSetPanel,
+  runtimeGet: RuntimeGetPanel,
   dbConnection: DBConnectionPanel,
   dbQuery: DBQueryPanel,
   artifactStore: ArtifactStorePanel,
