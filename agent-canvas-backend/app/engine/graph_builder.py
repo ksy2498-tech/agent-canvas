@@ -80,7 +80,7 @@ async def build_and_run(
         start_nodes = [node for node in nodes if node.node_type.lower() == "start"]
         first_node = start_nodes[0] if start_nodes else (nodes[0] if nodes else None)
         if first_node is None:
-            yield {"type": "done", "output": query, "trace": []}
+            yield {"type": "done", "output": query, "trace": [], "state": {"query": query}}
             return
         builder.add_edge(START, node_names[first_node.id])
 
@@ -133,15 +133,17 @@ async def build_and_run(
                         "output_preview": str(state.get("current_output", ""))[:200],
                         "node_results": state.get("node_results", {}),
                         "update": update or {},
+                        "state": state,
                     }
         yield {
             "type": "done",
             "output": state.get("current_output", ""),
             "trace": state.get("trace", []),
             "node_results": state.get("node_results", {}),
+            "state": state,
         }
     except Exception as exc:
-        yield {"type": "error", "message": str(exc), "nodeId": None}
+        yield {"type": "error", "message": str(exc), "nodeId": None, "state": state}
 
 
 async def _run_node_with_events(node, fn: NodeFn, state: AgentState) -> AgentState:
