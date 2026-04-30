@@ -18,9 +18,7 @@ def merge_dicts(left: dict | None, right: dict | None) -> dict:
 class AgentState(TypedDict, total=False):
     query: str
     messages: Annotated[list[BaseMessage], operator.add]
-    nlp_result: Optional[dict]
     current_output: str
-    loaded_session: Annotated[dict, merge_dicts]
     node_results: Annotated[dict, merge_dicts]
     metadata: Annotated[dict, merge_dicts]
     session_id: Optional[str]
