@@ -14,6 +14,8 @@ def build_artifact_store_node(config: dict[str, Any]):
         key = config.get("key") or config.get("artifact_key") or config.get("artifactKey") or "artifact"
         state_key = config.get("state_key") or config.get("stateKey") or "current_output"
         output_key = config.get("output_key") or config.get("outputKey") or "current_artifact_id"
+        cleanup_source = bool(config.get("cleanup_source") or config.get("cleanupSource") or config.get("clearSourceAfterStore"))
+        cleanup_value = config.get("cleanup_value") if "cleanup_value" in config else config.get("cleanupValue", None)
         content = _state_value(state, state_key)
         root = Path(config.get("root", "./artifacts"))
         root.mkdir(parents=True, exist_ok=True)
@@ -36,11 +38,15 @@ def build_artifact_store_node(config: dict[str, Any]):
         refs[artifact_id] = ref
         latest_by_key = dict(state.get("latest_artifacts", {}))
         latest_by_key[key] = artifact_id
-        return {
+        updates: AgentState = {
             "artifact_refs": refs,
             "latest_artifacts": latest_by_key,
             output_key: artifact_id,
-            **append_trace(
+        }
+        if cleanup_source:
+            _assign_cleanup(updates, state, state_key, cleanup_value)
+        updates.update(
+            append_trace(
                 state,
                 config.get("_node_id", "artifact_store"),
                 config.get("_label", "Artifact Store"),
@@ -48,8 +54,10 @@ def build_artifact_store_node(config: dict[str, Any]):
                 key=key,
                 path=str(path),
                 source_key=state_key,
-            ),
-        }
+                cleanup_source=cleanup_source,
+            )
+        )
+        return updates
 
     return node
 
@@ -91,6 +99,28 @@ def _serialize_content(content: Any) -> str:
         return json.dumps(content, ensure_ascii=False, indent=2, default=str)
     except TypeError:
         return str(content)
+
+
+def _assign_cleanup(updates: dict[str, Any], state: AgentState, key: str | None, value: Any) -> None:
+    if not key:
+        return
+    if _path_value(state, key) is not None:
+        _assign_path(updates, key, value)
+        return
+    if _path_value(state.get("node_results", {}), key) is not None:
+        _assign_path(updates, f"node_results.{key}", value)
+
+
+def _assign_path(target: dict[str, Any], key: str, value: Any) -> None:
+    cursor = target
+    parts = str(key).split(".")
+    for part in parts[:-1]:
+        next_value = cursor.get(part)
+        if not isinstance(next_value, dict):
+            next_value = {}
+            cursor[part] = next_value
+        cursor = next_value
+    cursor[parts[-1]] = value
 
 
 def _state_value(state: AgentState, key: str | None) -> Any:
