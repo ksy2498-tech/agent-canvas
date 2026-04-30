@@ -12,24 +12,13 @@ def build_nlp_node(config: dict[str, Any]):
         engine = str(config.get("engine", "kiwi")).lower()
         analysis_type = config.get("analysis_type") or config.get("analysisType") or "morpheme"
         tokens = _analyze_tokens(str(text), engine)
-        pos = [
-            {
-                "form": token.get("form"),
-                "pos": token.get("pos") or token.get("tag"),
-                "tag": token.get("tag") or token.get("pos"),
-                **({"start": token["start"]} if "start" in token else {}),
-                **({"len": token["len"]} if "len" in token else {}),
-            }
-            for token in tokens
-        ]
-        nouns = [item["form"] for item in pos if str(item.get("pos", "")).startswith("N")]
+        nouns = [item["form"] for item in tokens if str(item.get("pos", "")).startswith("N")]
         result = {
             "engine": engine,
             "analysis_type": analysis_type,
             "input_key": input_key,
             "text": str(text),
-            "tokens": pos,
-            "pos": pos,
+            "tokens": tokens,
             "nouns": nouns,
         }
         output_key = config.get("output_key") or config.get("outputKey") or "nlp_result"
@@ -61,7 +50,6 @@ def _analyze_tokens(text: str, engine: str) -> list[dict[str, Any]]:
                 {
                     "form": token.form,
                     "pos": token.tag,
-                    "tag": token.tag,
                     "start": token.start,
                     "len": token.len,
                 }
@@ -69,7 +57,7 @@ def _analyze_tokens(text: str, engine: str) -> list[dict[str, Any]]:
             ]
         except Exception:
             pass
-    return [{"form": token, "pos": "UNK", "tag": "UNK"} for token in re.findall(r"\w+", text)]
+    return [{"form": token, "pos": "UNK"} for token in re.findall(r"\w+", text)]
 
 
 def _state_value(state: AgentState, key: str | None) -> Any:
