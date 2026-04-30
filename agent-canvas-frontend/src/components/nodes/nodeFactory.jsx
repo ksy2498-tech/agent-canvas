@@ -18,6 +18,7 @@ import {
   Server,
   Square,
   Text,
+  Variable,
   Wand2,
 } from 'lucide-react';
 import BaseNode from './BaseNode';
@@ -31,10 +32,12 @@ export const nodeDefinitions = {
   router: { label: 'Router', category: 'router', icon: Route, summary: (d) => d.routingMode || 'llm-based' },
   condition: { label: 'Condition', category: 'condition', icon: GitBranch, summary: (d) => d.expression || 'No condition' },
   breakpoint: { label: 'Breakpoint', category: 'breakpoint', icon: Square, summary: (d) => d.mode || 'pause and inspect' },
-  sessionLoad: { label: 'Session Load', category: 'session', icon: FileDown, summary: (d) => `Output: ${d.outputKey || 'messages'}` },
+  sessionLoad: { label: 'Session Load', category: 'session', icon: FileDown, summary: (d) => `Output: ${d.outputKey || 'session'}` },
   sessionSave: { label: 'Session Save', category: 'session', icon: Save, summary: (d) => d.mode || 'append' },
   stateSet: { label: 'State Set', category: 'state', icon: Braces, summary: (d) => `${d.values?.length || 0} keys` },
   stateGet: { label: 'State Get', category: 'state', icon: ListFilter, summary: (d) => d.key || 'No key' },
+  runtimeSet: { label: 'Runtime Set', category: 'runtime', icon: Variable, summary: (d) => `${d.section || 'scratch'}.${d.key || 'value'}` },
+  runtimeGet: { label: 'Runtime Get', category: 'runtime', icon: Variable, summary: (d) => `${d.section || 'scratch'}.${d.key || 'value'}` },
   dbConnection: { label: 'DB Connection', category: 'db', icon: Server, summary: (d) => d.alias || d.dbType || 'Connection' },
   dbQuery: { label: 'DB Query', category: 'db', icon: Database, summary: (d) => d.connectionAlias || 'No connection' },
   artifactStore: { label: 'Artifact Store', category: 'artifact', icon: FileUp, summary: (d) => d.backend || 'Local' },
