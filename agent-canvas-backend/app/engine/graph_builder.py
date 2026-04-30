@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
 
@@ -26,10 +27,11 @@ from app.engine.nodes import (
     build_state_get_node,
     build_state_set_node,
 )
+from app.engine.nodes._common import make_runtime, runtime_preview
 from app.engine.state import AgentState
 from app.mcp.registry import resolve_mcp_servers
 
-NodeFn = Callable[[AgentState], Awaitable[AgentState]]
+NodeFn = Callable[..., Awaitable[AgentState]]
 PENDING_RUNS: dict[str, dict[str, Any]] = {}
 
 
@@ -42,8 +44,11 @@ async def build_and_run(
     edge_breakpoints: dict[str, Any] | None = None,
     start_node_ids: list[str] | None = None,
     initial_state: AgentState | None = None,
+    initial_runtime: dict[str, Any] | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     run_id = run_id or graph_id
+    runtime = initial_runtime or make_runtime(run_id)
+    runtime["run_id"] = run_id
     breakpoints = breakpoints or {}
     edge_breakpoints = edge_breakpoints or {}
     graph_record = await crud.get_graph(db, graph_id)
@@ -73,12 +78,13 @@ async def build_and_run(
         "node_results": {},
         "metadata": {},
         "session_id": None,
-        "artifact_refs": {},
+        "artifacts": {},
         "trace": [],
     }
+    run_config = {"configurable": {"run_id": run_id, "runtime": runtime}}
 
     try:
-        async for chunk in compiled.astream(state):
+        async for chunk in compiled.astream(state, config=run_config):
             for name, update in chunk.items():
                 node_id = _id_from_node_name(name, node_by_id)
                 node = node_by_id.get(node_id)
@@ -87,6 +93,7 @@ async def build_and_run(
                 if update:
                     state.update(update)
                 if node:
+                    preview = runtime_preview(runtime)
                     yield {
                         "type": "node_end",
                         "nodeId": node.id,
@@ -96,14 +103,16 @@ async def build_and_run(
                         "node_results": state.get("node_results", {}),
                         "update": update or {},
                         "state": state,
+                        "runtime_preview": preview,
                         "runId": run_id,
                     }
                     if node.id in breakpoints:
-                        next_node_ids = await _next_node_ids(node.id, state, edges, condition_fns, node_names)
+                        next_node_ids = await _next_node_ids(node.id, state, edges, condition_fns, node_names, run_config)
                         PENDING_RUNS[run_id] = {
                             "graph_id": graph_id,
                             "query": query,
                             "state": state,
+                            "runtime": runtime,
                             "next_node_ids": next_node_ids,
                             "breakpoints": breakpoints,
                             "edge_breakpoints": edge_breakpoints,
@@ -115,6 +124,7 @@ async def build_and_run(
                             "at": node.id,
                             "label": node.label,
                             "state": state,
+                            "runtime_preview": preview,
                             "nextNodeIds": next_node_ids,
                             "breakpoint": breakpoints.get(node.id),
                         }
@@ -127,9 +137,10 @@ async def build_and_run(
             "trace": state.get("trace", []),
             "node_results": state.get("node_results", {}),
             "state": state,
+            "runtime_preview": runtime_preview(runtime),
         }
     except Exception as exc:
-        yield {"type": "error", "message": str(exc), "nodeId": None, "state": state, "runId": run_id}
+        yield {"type": "error", "message": str(exc), "nodeId": None, "state": state, "runtime_preview": runtime_preview(runtime), "runId": run_id}
 
 
 async def resume_run(run_id: str, edited_state: dict[str, Any], db: AsyncSession) -> AsyncGenerator[dict[str, Any], None]:
@@ -138,6 +149,7 @@ async def resume_run(run_id: str, edited_state: dict[str, Any], db: AsyncSession
         yield {"type": "error", "message": "No paused run found", "runId": run_id}
         return
     state = _apply_edited_state(pending.get("state") or {}, edited_state or {})
+    runtime = pending.get("runtime") or make_runtime(run_id)
     next_node_ids = list(pending.get("next_node_ids") or [])
     if not next_node_ids:
         PENDING_RUNS.pop(run_id, None)
@@ -148,9 +160,9 @@ async def resume_run(run_id: str, edited_state: dict[str, Any], db: AsyncSession
             "trace": state.get("trace", []),
             "node_results": state.get("node_results", {}),
             "state": state,
+            "runtime_preview": runtime_preview(runtime),
         }
         return
-    # Prevent immediately pausing on nodes already passed. Downstream breakpoints remain active.
     breakpoints = dict(pending.get("breakpoints") or {})
     breakpoints.pop(pending.get("paused_at"), None)
     async for event in build_and_run(
@@ -162,6 +174,7 @@ async def resume_run(run_id: str, edited_state: dict[str, Any], db: AsyncSession
         edge_breakpoints=pending.get("edge_breakpoints") or {},
         start_node_ids=next_node_ids,
         initial_state=state,
+        initial_runtime=runtime,
     ):
         yield event
 
@@ -169,7 +182,6 @@ async def resume_run(run_id: str, edited_state: dict[str, Any], db: AsyncSession
 def _apply_edited_state(existing: dict[str, Any], edited: dict[str, Any]) -> AgentState:
     state = dict(existing)
     for key, value in edited.items():
-        # Keep original LangChain message objects; JSON-edited messages are not safe to restore as-is.
         if key == "messages":
             continue
         state[key] = value
@@ -190,12 +202,12 @@ async def _compile_graph(
     mcp_servers = await resolve_mcp_servers(db, graph_id, attached)
 
     builder = StateGraph(AgentState)
-    condition_fns: dict[str, Callable[[AgentState], Awaitable[str]]] = {}
+    condition_fns: dict[str, Callable[..., Awaitable[str]]] = {}
     node_names = {node.id: _node_name(node.id) for node in nodes}
 
     async def make_wrapped(node, fn: NodeFn) -> NodeFn:
-        async def wrapped(state: AgentState) -> AgentState:
-            return await _run_node_with_events(node, fn, state)
+        async def wrapped(state: AgentState, config: dict[str, Any] | None = None) -> AgentState:
+            return await _run_node_with_events(node, fn, state, config)
 
         return wrapped
 
@@ -236,15 +248,16 @@ async def _next_node_ids(
     node_id: str,
     state: AgentState,
     edges: list[Any],
-    condition_fns: dict[str, Callable[[AgentState], Awaitable[str]]],
+    condition_fns: dict[str, Callable[..., Awaitable[str]]],
     node_names: dict[str, str],
+    runtime_config: dict[str, Any] | None = None,
 ) -> list[str]:
     outgoing = [edge for edge in edges if edge.source_node_id == node_id]
     if not outgoing:
         return []
     if node_id not in condition_fns:
         return [edge.target_node_id for edge in outgoing]
-    selected = await condition_fns[node_id](state)
+    selected = await _call_node_fn(condition_fns[node_id], state, runtime_config)
     for edge in outgoing:
         label = edge.condition_label or edge.source_handle or "default"
         if label == selected and edge.target_node_id in node_names:
@@ -256,9 +269,16 @@ async def _next_node_ids(
     return []
 
 
-async def _run_node_with_events(node, fn: NodeFn, state: AgentState) -> AgentState:
+async def _run_node_with_events(node, fn: NodeFn, state: AgentState, config: dict[str, Any] | None = None) -> AgentState:
     if node.node_type.lower() in {"start", "end"}:
         return {"trace": [{"node_id": node.id, "label": node.label, "status": "ok"}]}
+    return await _call_node_fn(fn, state, config)
+
+
+async def _call_node_fn(fn: Callable[..., Awaitable[Any]], state: AgentState, config: dict[str, Any] | None = None) -> Any:
+    params = inspect.signature(fn).parameters
+    if len(params) >= 2:
+        return await fn(state, config)
     return await fn(state)
 
 
