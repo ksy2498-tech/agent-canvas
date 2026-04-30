@@ -11,7 +11,7 @@ def build_nlp_node(config: dict[str, Any]):
         text = _state_value(state, input_key) or state.get("query", "")
         engine = str(config.get("engine", "kiwi")).lower()
         analysis_type = config.get("analysis_type") or config.get("analysisType") or "morpheme"
-        tokens = _analyze_tokens(str(text), engine)
+        tokens, fallback_reason = _analyze_tokens(str(text), engine)
         nouns = [item["form"] for item in tokens if str(item.get("pos", "")).startswith("N")]
         result = {
             "engine": engine,
@@ -20,6 +20,8 @@ def build_nlp_node(config: dict[str, Any]):
             "text": str(text),
             "tokens": tokens,
             "nouns": nouns,
+            "fallback": fallback_reason is not None,
+            "fallback_reason": fallback_reason,
         }
         output_key = config.get("output_key") or config.get("outputKey") or "nlp_result"
         return {
@@ -34,13 +36,14 @@ def build_nlp_node(config: dict[str, Any]):
                 input_key=input_key,
                 token_count=len(tokens),
                 noun_count=len(nouns),
+                fallback=fallback_reason is not None,
             ),
         }
 
     return node
 
 
-def _analyze_tokens(text: str, engine: str) -> list[dict[str, Any]]:
+def _analyze_tokens(text: str, engine: str) -> tuple[list[dict[str, Any]], str | None]:
     if engine == "kiwi":
         try:
             from kiwipiepy import Kiwi
@@ -54,9 +57,13 @@ def _analyze_tokens(text: str, engine: str) -> list[dict[str, Any]]:
                     "len": token.len,
                 }
                 for token in kiwi.tokenize(text)
-            ]
-        except Exception:
-            pass
+            ], None
+        except Exception as exc:
+            return _regex_tokens(text), f"Kiwi unavailable: {exc}"
+    return _regex_tokens(text), f"Unsupported engine `{engine}`; used regex fallback"
+
+
+def _regex_tokens(text: str) -> list[dict[str, Any]]:
     return [{"form": token, "pos": "UNK"} for token in re.findall(r"\w+", text)]
 
 
