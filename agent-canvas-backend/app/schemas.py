@@ -58,6 +58,7 @@ class GraphRead(BaseModel):
 
 class RunRequest(BaseModel):
     query: str
+    runId: str | None = None
     breakpoints: dict[str, Any] = Field(default_factory=dict)
     edgeBreakpoints: dict[str, Any] = Field(default_factory=dict)
 
