@@ -20,10 +20,13 @@ class AgentState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], operator.add]
     nlp_result: Optional[dict]
     current_output: str
+    current_artifact_id: Optional[str]
+    loaded_session: Annotated[dict, merge_dicts]
     node_results: Annotated[dict, merge_dicts]
     metadata: Annotated[dict, merge_dicts]
     session_id: Optional[str]
-    artifact_refs: dict
+    artifact_refs: Annotated[dict, merge_dicts]
+    latest_artifacts: Annotated[dict, merge_dicts]
     db_result: Optional[Any]
     http_result: Optional[Any]
     trace: Annotated[list[dict], operator.add]
