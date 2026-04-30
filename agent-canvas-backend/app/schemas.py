@@ -58,6 +58,13 @@ class GraphRead(BaseModel):
 
 class RunRequest(BaseModel):
     query: str
+    breakpoints: dict[str, Any] = Field(default_factory=dict)
+    edgeBreakpoints: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResumeRequest(BaseModel):
+    runId: str
+    editedState: dict[str, Any] = Field(default_factory=dict)
 
 
 class MCPServerCreate(BaseModel):
