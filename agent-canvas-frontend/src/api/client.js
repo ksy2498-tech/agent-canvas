@@ -40,20 +40,7 @@ const parseStreamPayloads = (chunk) =>
     })
     .filter(Boolean);
 
-export const runGraph = async (id, query, breakpoints, edgeBreakpoints, onEvent) => {
-  const response = await fetch(`/api/graphs/${id}/run`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-    },
-    body: JSON.stringify({
-      query,
-      breakpoints: breakpoints || {},
-      edgeBreakpoints: edgeBreakpoints || {},
-    }),
-  });
-
+const readEventStream = async (response, onEvent, errorPrefix = 'Request failed') => {
   if (!response.ok) {
     let detail = '';
     try {
@@ -62,7 +49,7 @@ export const runGraph = async (id, query, breakpoints, edgeBreakpoints, onEvent)
     } catch {
       detail = await response.text().catch(() => '');
     }
-    throw new Error(detail ? `Run failed with ${response.status}: ${detail}` : `Run failed with ${response.status}`);
+    throw new Error(detail ? `${errorPrefix} with ${response.status}: ${detail}` : `${errorPrefix} with ${response.status}`);
   }
 
   if (!response.body) {
@@ -90,8 +77,36 @@ export const runGraph = async (id, query, breakpoints, edgeBreakpoints, onEvent)
   }
 };
 
-export const resumeExecution = (id, editedState) =>
-  api.post(`/graphs/${id}/resume`, { editedState }).then((r) => r.data);
+export const runGraph = async (id, query, breakpoints, edgeBreakpoints, onEvent, runId) => {
+  const response = await fetch(`/api/graphs/${id}/run`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify({
+      query,
+      runId,
+      breakpoints: breakpoints || {},
+      edgeBreakpoints: edgeBreakpoints || {},
+    }),
+  });
+
+  return readEventStream(response, onEvent, 'Run failed');
+};
+
+export const resumeExecution = async (id, runId, editedState, onEvent) => {
+  const response = await fetch(`/api/graphs/${id}/resume`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify({ runId, editedState }),
+  });
+
+  return readEventStream(response, onEvent, 'Resume failed');
+};
 
 export const downloadCode = async (id, filename = 'agent-graph.zip') => {
   const response = await api.get(`/graphs/${id}/download`, { responseType: 'blob' });
