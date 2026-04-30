@@ -15,6 +15,8 @@ import SessionLoadNode from './nodes/SessionLoadNode';
 import SessionSaveNode from './nodes/SessionSaveNode';
 import StateSetNode from './nodes/StateSetNode';
 import StateGetNode from './nodes/StateGetNode';
+import RuntimeSetNode from './nodes/RuntimeSetNode';
+import RuntimeGetNode from './nodes/RuntimeGetNode';
 import DBConnectionNode from './nodes/DBConnectionNode';
 import DBQueryNode from './nodes/DBQueryNode';
 import ArtifactStoreNode from './nodes/ArtifactStoreNode';
@@ -26,7 +28,7 @@ import NLPNode from './nodes/NLPNode';
 
 const nodeTypes = {
   start: StartNode, end: EndNode, llm: LLMNode, mcpTool: MCPToolNode, code: CodeNode, router: RouterNode, condition: ConditionNode, breakpoint: BreakpointNode,
-  sessionLoad: SessionLoadNode, sessionSave: SessionSaveNode, stateSet: StateSetNode, stateGet: StateGetNode, dbConnection: DBConnectionNode, dbQuery: DBQueryNode,
+  sessionLoad: SessionLoadNode, sessionSave: SessionSaveNode, stateSet: StateSetNode, stateGet: StateGetNode, runtimeSet: RuntimeSetNode, runtimeGet: RuntimeGetNode, dbConnection: DBConnectionNode, dbQuery: DBQueryNode,
   artifactStore: ArtifactStoreNode, artifactLoad: ArtifactLoadNode, httpRequest: HTTPRequestNode, inputTransform: InputTransformNode, outputFormat: OutputFormatNode, nlp: NLPNode,
 };
 
