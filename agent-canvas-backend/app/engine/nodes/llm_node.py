@@ -13,6 +13,7 @@ def build_llm_node(config: dict[str, Any], mcp_servers: dict[str, Any]):
     attached_tools = config.get("attached_mcp_tools") or config.get("attachedTools") or []
     auto_tools = [tool for tool in attached_tools if _tool_value(tool, "execution_mode", "executionMode") == "auto"]
     tool_only = [tool for tool in attached_tools if _tool_value(tool, "execution_mode", "executionMode") == "tool-only"]
+    input_key = config.get("input_key") or config.get("inputKey") or "query"
     output_key = config.get("output_key") or config.get("outputKey") or "current_output"
     tool_result_key = config.get("tool_result_key") or config.get("toolResultKey") or output_key
     tool_name_key = config.get("tool_name_key") or config.get("toolNameKey")
@@ -75,7 +76,10 @@ def build_llm_node(config: dict[str, Any], mcp_servers: dict[str, Any]):
         if system_prompt:
             messages.append(SystemMessage(content=system_prompt))
         messages.extend(state.get("messages", []))
-        if state.get("query") and not messages:
+        input_value = _state_value(state, input_key)
+        if input_value is not None:
+            messages.append(HumanMessage(content=_stringify_input(input_value)))
+        elif state.get("query") and not messages:
             messages.append(HumanMessage(content=state["query"]))
         response = await llm.ainvoke(messages)
 
@@ -95,7 +99,7 @@ def build_llm_node(config: dict[str, Any], mcp_servers: dict[str, Any]):
             {
                 "node_results": node_results,
                 "messages": produced_messages or [AIMessage(content=output)],
-                **append_trace(state, node_id, label, output_preview=output[:200]),
+                **append_trace(state, node_id, label, output_preview=output[:200], input_key=input_key),
             }
         )
         if update_current_output or output_key == "current_output":
@@ -202,6 +206,15 @@ def _tool_args(state: AgentState, config: dict[str, Any], tool_args_key: str | N
             return value
     value = config.get("tool_args") or config.get("toolArgs") or {}
     return value if isinstance(value, dict) else {}
+
+
+def _stringify_input(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False, default=str)
+    except TypeError:
+        return str(value)
 
 
 def _state_value(state: AgentState, key: str | None) -> Any:
