@@ -5,7 +5,7 @@ from typing import Any
 
 from langchain_core.messages import messages_from_dict, messages_to_dict
 
-from app.engine.nodes._common import SAFE_BUILTINS, append_trace
+from app.engine.nodes._common import SAFE_BUILTINS, append_trace, runtime_from_config, write_runtime
 from app.engine.state import AgentState
 
 
@@ -92,70 +92,38 @@ def _merge_payload(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[s
 
 
 def build_session_load_node(config: dict[str, Any]):
-    async def node(state: AgentState) -> AgentState:
+    async def node(state: AgentState, run_config: dict[str, Any] | None = None) -> AgentState:
         path = _db_path(config)
         _ensure(path)
         session_id = _session_id(config, state)
-        output_key = config.get("output_key") or config.get("outputKey") or "loaded_session"
+        target = config.get("target") or config.get("outputTarget") or "runtime"
+        output_key = config.get("output_key") or config.get("outputKey") or "session"
         if not session_id:
             return append_trace(state, config.get("_node_id", "session_load"), config.get("_label", "Session Load"))
         with sqlite3.connect(path) as conn:
             row = conn.execute("SELECT payload FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
         if not row:
-            return append_trace(state, config.get("_node_id", "session_load"), config.get("_label", "Session Load"))
+            return append_trace(state, config.get("_node_id", "session_load"), config.get("_label", "Session Load"), session_id=session_id, loaded=False)
         payload = json.loads(row[0])
-        deserialized_payload = _deserialize_payload(payload)
-        if output_key in {"*", "__all__", "state"}:
-            return {
-                **deserialized_payload,
-                **append_trace(
-                    state,
-                    config.get("_node_id", "session_load"),
-                    config.get("_label", "Session Load"),
-                    session_id=session_id,
-                    loaded="state",
-                ),
-            }
-        if output_key in {"loaded_session", "session", "payload"}:
-            updates: AgentState = {
-                output_key: {
-                    "session_id": session_id,
-                    **deserialized_payload,
-                }
-            }
-            updates.update(
-                append_trace(
-                    state,
-                    config.get("_node_id", "session_load"),
-                    config.get("_label", "Session Load"),
-                    session_id=session_id,
-                    loaded=output_key,
-                )
-            )
-            return updates
-        value = _path_value(payload, output_key)
-        if value is None:
-            updates: AgentState = {
-                "loaded_session": {
-                    "session_id": session_id,
-                    **deserialized_payload,
-                }
-            }
-            updates.update(
-                append_trace(
-                    state,
-                    config.get("_node_id", "session_load"),
-                    config.get("_label", "Session Load"),
-                    session_id=session_id,
-                    loaded="loaded_session",
-                    missing_key=output_key,
-                )
-            )
-            return updates
-        value = _deserialize_value(output_key, value)
+        loaded_session = {"session_id": session_id, **_deserialize_payload(payload)}
+        if target in {"runtime", "both"}:
+            runtime = runtime_from_config(run_config)
+            write_runtime(runtime, "session", output_key, loaded_session)
         updates: AgentState = {}
-        _assign_path(updates, output_key, value)
-        updates.update(append_trace(state, config.get("_node_id", "session_load"), config.get("_label", "Session Load"), session_id=session_id, loaded=output_key))
+        if target in {"state", "both"}:
+            state_key = output_key if output_key.startswith("metadata.") or output_key.startswith("node_results.") else f"metadata.{output_key}"
+            _assign_path(updates, state_key, _session_summary(loaded_session))
+        updates.update(
+            append_trace(
+                state,
+                config.get("_node_id", "session_load"),
+                config.get("_label", "Session Load"),
+                session_id=session_id,
+                loaded=True,
+                target=target,
+                output_key=output_key,
+            )
+        )
         return updates
 
     return node
@@ -187,11 +155,20 @@ def build_session_save_node(config: dict[str, Any]):
     return node
 
 
+def _session_summary(session: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "session_id": session.get("session_id"),
+        "keys": sorted(session.keys()),
+        "message_count": len(session.get("messages") or []),
+        "node_result_keys": sorted((session.get("node_results") or {}).keys()) if isinstance(session.get("node_results"), dict) else [],
+    }
+
+
 def _keys_to_save(config: dict[str, Any], state: AgentState) -> list[str]:
-    raw_keys = config.get("keys") or config.get("keysToSave") or ["messages", "node_results"]
+    raw_keys = config.get("keys") or config.get("keysToSave") or ["messages", "node_results", "metadata", "artifacts"]
     keys = [key for key in raw_keys if key]
     if not keys:
-        return ["messages", "node_results"]
+        return ["messages", "node_results", "metadata", "artifacts"]
     if "metadata" in keys and "node_results" not in keys and state.get("node_results"):
         keys.append("node_results")
     return keys
