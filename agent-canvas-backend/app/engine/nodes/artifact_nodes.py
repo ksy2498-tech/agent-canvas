@@ -5,18 +5,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.engine.nodes._common import append_trace
+from app.engine.nodes._common import append_trace, read_runtime, runtime_from_config, write_runtime
 from app.engine.state import AgentState
 
 
 def build_artifact_store_node(config: dict[str, Any]):
-    async def node(state: AgentState) -> AgentState:
+    async def node(state: AgentState, run_config: dict[str, Any] | None = None) -> AgentState:
         key = config.get("key") or config.get("artifact_key") or config.get("artifactKey") or "artifact"
-        state_key = config.get("state_key") or config.get("stateKey") or "current_output"
+        source_scope = config.get("source_scope") or config.get("sourceScope") or "state"
+        source_key = config.get("state_key") or config.get("stateKey") or config.get("sourceKey") or "current_output"
         output_key = config.get("output_key") or config.get("outputKey") or "artifacts.current_id"
         cleanup_source = bool(config.get("cleanup_source") or config.get("cleanupSource") or config.get("clearSourceAfterStore"))
         cleanup_value = config.get("cleanup_value") if "cleanup_value" in config else config.get("cleanupValue", None)
-        content = _state_value(state, state_key)
+        runtime = runtime_from_config(run_config)
+        content = _read_value(state, runtime, source_scope, source_key)
         root = Path(config.get("root", "./artifacts"))
         root.mkdir(parents=True, exist_ok=True)
 
@@ -33,7 +35,8 @@ def build_artifact_store_node(config: dict[str, Any]):
             "id": artifact_id,
             "key": key,
             "path": str(path),
-            "source_key": state_key,
+            "source_scope": source_scope,
+            "source_key": source_key,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "content_type": config.get("content_type") or config.get("contentType") or "text/plain",
         }
@@ -46,10 +49,11 @@ def build_artifact_store_node(config: dict[str, Any]):
                 "latest_by_key": latest_by_key,
             }
         }
+        write_runtime(runtime, "artifacts", artifact_id, ref)
         if output_key and output_key != "artifacts.current_id":
             _assign_path(updates, output_key, artifact_id)
         if cleanup_source:
-            _assign_cleanup(updates, state, state_key, cleanup_value)
+            _cleanup_source(updates, runtime, state, source_scope, source_key, cleanup_value)
         updates.update(
             append_trace(
                 state,
@@ -58,7 +62,8 @@ def build_artifact_store_node(config: dict[str, Any]):
                 artifact_id=artifact_id,
                 key=key,
                 path=str(path),
-                source_key=state_key,
+                source_scope=source_scope,
+                source_key=source_key,
                 cleanup_source=cleanup_source,
             )
         )
@@ -68,8 +73,9 @@ def build_artifact_store_node(config: dict[str, Any]):
 
 
 def build_artifact_load_node(config: dict[str, Any]):
-    async def node(state: AgentState) -> AgentState:
+    async def node(state: AgentState, run_config: dict[str, Any] | None = None) -> AgentState:
         key = config.get("key", "artifact")
+        target_scope = config.get("target_scope") or config.get("targetScope") or "state"
         artifact_id = config.get("artifact_id") or config.get("artifactId") or _state_value(state, config.get("artifact_id_key") or config.get("artifactIdKey"))
         artifacts = _artifacts_state(state)
         refs = artifacts.get("refs", {})
@@ -79,16 +85,24 @@ def build_artifact_load_node(config: dict[str, Any]):
         path = Path(config.get("path") or (ref.get("path") if isinstance(ref, dict) else ref or ""))
         content = path.read_text(encoding="utf-8") if path.exists() else ""
         output_key = config.get("output_key") or config.get("outputKey") or "current_output"
-        return {
-            output_key: content,
-            **append_trace(
+        updates: AgentState = {}
+        if target_scope == "runtime":
+            runtime = runtime_from_config(run_config)
+            write_runtime(runtime, "scratch", output_key, content)
+        else:
+            _assign_path(updates, output_key, content)
+        updates.update(
+            append_trace(
                 state,
                 config.get("_node_id", "artifact_load"),
                 config.get("_label", "Artifact Load"),
                 artifact_id=resolved_id,
+                target_scope=target_scope,
+                output_key=output_key,
                 path=str(path),
-            ),
-        }
+            )
+        )
+        return updates
 
     return node
 
@@ -102,11 +116,30 @@ def _artifacts_state(state: AgentState) -> dict[str, Any]:
     artifacts = dict(state.get("artifacts", {}) or {})
     refs = dict(artifacts.get("refs", {}) or {})
     latest_by_key = dict(artifacts.get("latest_by_key", {}) or {})
-    # Backward-compatible read for older runs/state snapshots.
     refs.update(state.get("artifact_refs", {}) or {})
     latest_by_key.update(state.get("latest_artifacts", {}) or {})
     current_id = artifacts.get("current_id") or state.get("current_artifact_id")
     return {"current_id": current_id, "refs": refs, "latest_by_key": latest_by_key}
+
+
+def _read_value(state: AgentState, runtime: dict[str, Any], scope: str, key: str | None) -> Any:
+    if scope == "runtime":
+        section, _, nested_key = str(key or "").partition(".")
+        return read_runtime(runtime, section, nested_key or None)
+    return _state_value(state, key)
+
+
+def _cleanup_source(updates: dict[str, Any], runtime: dict[str, Any], state: AgentState, scope: str, key: str | None, value: Any) -> None:
+    if not key:
+        return
+    if scope == "runtime":
+        section, _, nested_key = str(key).partition(".")
+        if nested_key:
+            runtime.setdefault(section, {})[nested_key] = value
+        elif section:
+            runtime[section] = value
+        return
+    _assign_cleanup(updates, state, key, value)
 
 
 def _serialize_content(content: Any) -> str:
