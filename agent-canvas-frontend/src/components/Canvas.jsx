@@ -387,6 +387,8 @@ export default function Canvas() {
           if (type) addNodeAtDrop(type, screenToFlowPosition({ x: event.clientX, y: event.clientY }));
         }}
         onEdgeContextMenu={(event, edge) => { event.preventDefault(); setEdgeMenu({ x: event.clientX, y: event.clientY, edge }); }}
+        panActivationKeyCode={null}
+        selectionKeyCode={null}
         defaultViewport={{ x: 240, y: 120, zoom: 0.85 }}
         minZoom={0.25}
         maxZoom={1.4}
