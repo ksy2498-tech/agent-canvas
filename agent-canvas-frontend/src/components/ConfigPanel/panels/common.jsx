@@ -19,10 +19,10 @@ export const transformTemplate = `def transform(state, mcp):
 
 export function Field({ label, children }) {
   return (
-    <label className="block space-y-1 text-xs">
+    <div className="block space-y-1 text-xs">
       <span className="font-medium text-slate-700 dark:text-slate-200">{label}</span>
       {children}
-    </label>
+    </div>
   );
 }
 
