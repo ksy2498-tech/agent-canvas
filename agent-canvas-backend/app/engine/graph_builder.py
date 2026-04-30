@@ -137,8 +137,7 @@ async def resume_run(run_id: str, edited_state: dict[str, Any], db: AsyncSession
     if not pending:
         yield {"type": "error", "message": "No paused run found", "runId": run_id}
         return
-    state = dict(pending.get("state") or {})
-    state.update(edited_state or {})
+    state = _apply_edited_state(pending.get("state") or {}, edited_state or {})
     next_node_ids = list(pending.get("next_node_ids") or [])
     if not next_node_ids:
         PENDING_RUNS.pop(run_id, None)
@@ -165,6 +164,16 @@ async def resume_run(run_id: str, edited_state: dict[str, Any], db: AsyncSession
         initial_state=state,
     ):
         yield event
+
+
+def _apply_edited_state(existing: dict[str, Any], edited: dict[str, Any]) -> AgentState:
+    state = dict(existing)
+    for key, value in edited.items():
+        # Keep original LangChain message objects; JSON-edited messages are not safe to restore as-is.
+        if key == "messages":
+            continue
+        state[key] = value
+    return state
 
 
 async def _compile_graph(
