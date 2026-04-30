@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Send, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { runGraph } from '../api/client';
+import { runGraph, resumeExecution } from '../api/client';
 import { useGraphStore } from '../store/graphStore';
 
 const traceEventKey = (runId, event, index = 0) => `${runId}:${event.type}:${event.nodeId || event.label || 'event'}:${event.timestamp || index}`;
@@ -11,8 +11,9 @@ export default function RunPanel() {
   const [messages, setMessages] = useState([]);
   const [runHistory, setRunHistory] = useState([]);
   const [selectedStateEvent, setSelectedStateEvent] = useState(null);
+  const [pausedRunId, setPausedRunId] = useState(null);
   const activeRunIdRef = useRef(null);
-  const { graphId, breakpoints, edgeBreakpoints, setPanelMode, validateGraph, saveGraph, runStatus, setRunStatus, pausedState, pausedAt, resumeExecution, setTrace, setRunningNodeId, setPausedState } = useGraphStore();
+  const { graphId, breakpoints, edgeBreakpoints, setPanelMode, validateGraph, saveGraph, runStatus, setRunStatus, pausedState, pausedAt, setTrace, setRunningNodeId, setPausedState } = useGraphStore();
 
   useEffect(() => {
     const handler = (event) => {
@@ -38,7 +39,7 @@ export default function RunPanel() {
   };
 
   const handlePayload = (payload) => {
-    const runId = activeRunIdRef.current;
+    const runId = payload.runId || activeRunIdRef.current;
     if (runId && ['node_start', 'node_end', 'trace', 'error', 'done', 'paused'].includes(payload.type)) {
       appendRunEvent(runId, { ...payload, timestamp: new Date().toISOString() });
     }
@@ -51,7 +52,10 @@ export default function RunPanel() {
       appendTrace({ ...payload, status: payload.status || 'ok' });
     }
     if (payload.type === 'paused') {
+      setPausedRunId(runId);
       setPausedState(payload.state, payload.at);
+      setRunStatus('paused');
+      setRunningNodeId(null);
       if (runId) updateRun(runId, { status: 'paused' });
     }
     if (payload.type === 'message') setMessages((items) => [...items, { role: 'assistant', text: payload.text }]);
@@ -66,6 +70,7 @@ export default function RunPanel() {
     }
     if (payload.type === 'done') {
       setRunStatus('done');
+      setPausedRunId(null);
       setRunningNodeId(null);
       if (payload.output) setMessages((items) => [...items, { role: 'assistant', text: payload.output }]);
       if (runId) updateRun(runId, { status: 'done', finishedAt: new Date().toISOString(), output: payload.output });
@@ -76,8 +81,27 @@ export default function RunPanel() {
     setMessages([]);
     setRunHistory([]);
     setSelectedStateEvent(null);
+    setPausedRunId(null);
     setTrace([]);
     setRunningNodeId(null);
+  };
+
+  const resumePausedRun = async (editedState) => {
+    if (!pausedRunId) {
+      toast.error('No paused run to resume');
+      return;
+    }
+    activeRunIdRef.current = pausedRunId;
+    setRunStatus('running');
+    updateRun(pausedRunId, { status: 'running' });
+    try {
+      await resumeExecution(graphId, pausedRunId, editedState, handlePayload);
+    } catch (error) {
+      const message = error.message || 'Resume failed';
+      toast.error(message);
+      setRunStatus('error');
+      updateRun(pausedRunId, { status: 'error', finishedAt: new Date().toISOString() });
+    }
   };
 
   const send = async () => {
@@ -88,6 +112,7 @@ export default function RunPanel() {
     setMessages((items) => [...items, { role: 'user', text: runQuery }]);
     setRunHistory((runs) => [{ id: runId, query: runQuery, status: 'running', startedAt: new Date().toISOString(), events: [] }, ...runs]);
     setSelectedStateEvent(null);
+    setPausedRunId(null);
     setRunStatus('running');
     let runGraphId = graphId;
     try {
@@ -98,7 +123,7 @@ export default function RunPanel() {
       updateRun(runId, { status: 'error', finishedAt: new Date().toISOString() });
       return;
     }
-    runGraph(runGraphId, runQuery, breakpoints, edgeBreakpoints, handlePayload).catch((error) => {
+    runGraph(runGraphId, runQuery, breakpoints, edgeBreakpoints, handlePayload, runId).catch((error) => {
       const message = error.message || 'Run failed';
       toast.error(message);
       setMessages((items) => [...items, { role: 'error', text: message }]);
@@ -125,7 +150,7 @@ export default function RunPanel() {
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
           <ChatSection messages={messages} query={query} setQuery={setQuery} send={send} />
           <TraceSection runs={runHistory} selectedKey={selectedStateEvent?.key} onSelectState={toggleStateEvent} />
-          {runStatus === 'paused' ? <BreakpointResume pausedAt={pausedAt} pausedState={pausedState} onResume={(state) => resumeExecution(state).catch(() => toast.error('Resume failed'))} /> : null}
+          {runStatus === 'paused' ? <BreakpointResume pausedAt={pausedAt} pausedState={pausedState} onResume={resumePausedRun} /> : null}
         </div>
       </aside>
     </>
@@ -142,7 +167,7 @@ function TraceSection({ runs, selectedKey, onSelectState }) {
 
 function RunTrace({ run, index, selectedKey, onSelectState }) {
   const nodeEvents = run.events.filter((event) => ['node_start', 'node_end', 'error', 'paused', 'done'].includes(event.type));
-  return <details className={`rounded-md border p-2 ${run.status === 'error' ? 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/20' : 'border-slate-200 dark:border-slate-700'}`} open={run.status === 'running'}><summary className="cursor-pointer text-xs"><span className="font-semibold">Run {index}</span> <span className="ml-1 text-slate-500">{run.query}</span> <span className={`ml-1 rounded px-2 py-0.5 text-[11px] ${run.status === 'error' ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-200' : run.status === 'running' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200' : 'bg-slate-100 dark:bg-slate-800'}`}>{run.status}</span></summary><div className="mt-2 space-y-1">{nodeEvents.map((event, i) => <TraceEvent key={traceEventKey(run.id, event, i)} event={{ ...event, key: traceEventKey(run.id, event, i) }} selected={selectedKey === traceEventKey(run.id, event, i)} onSelectState={onSelectState} />)}</div></details>;
+  return <details className={`rounded-md border p-2 ${run.status === 'error' ? 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/20' : 'border-slate-200 dark:border-slate-700'}`} open={run.status === 'running' || run.status === 'paused'}><summary className="cursor-pointer text-xs"><span className="font-semibold">Run {index}</span> <span className="ml-1 text-slate-500">{run.query}</span> <span className={`ml-1 rounded px-2 py-0.5 text-[11px] ${run.status === 'error' ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-200' : run.status === 'running' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200' : run.status === 'paused' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-200' : 'bg-slate-100 dark:bg-slate-800'}`}>{run.status}</span></summary><div className="mt-2 space-y-1">{nodeEvents.map((event, i) => <TraceEvent key={traceEventKey(run.id, event, i)} event={{ ...event, key: traceEventKey(run.id, event, i) }} selected={selectedKey === traceEventKey(run.id, event, i)} onSelectState={onSelectState} />)}</div></details>;
 }
 
 function TraceEvent({ event, selected, onSelectState }) {
@@ -158,6 +183,13 @@ function StateDrawer({ event, onClose }) {
 }
 
 function BreakpointResume({ pausedAt, pausedState, onResume }) {
-  const [draft, setDraft] = useState(pausedState || {});
-  return <section className="mt-4 space-y-3 rounded-md border border-yellow-300 bg-yellow-50 p-3 dark:bg-yellow-950/20"><h3 className="font-semibold">Paused at {pausedAt}</h3><pre className="max-h-48 overflow-auto rounded bg-white p-2 text-xs dark:bg-slate-950">{JSON.stringify(draft, null, 2)}</pre>{Object.entries(draft || {}).map(([key, value]) => <label key={key} className="block text-xs font-medium">{key}<input className="field mt-1 bg-white" value={typeof value === 'string' ? value : JSON.stringify(value)} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} /></label>)}<div className="flex gap-2"><button className="primary-btn" onClick={() => onResume(draft)}>Resume</button><button className="secondary-btn" onClick={() => onResume(pausedState)}>Skip</button></div></section>;
+  const [draftText, setDraftText] = useState(() => JSON.stringify(pausedState || {}, null, 2));
+  const resume = () => {
+    try {
+      onResume(JSON.parse(draftText || '{}'));
+    } catch {
+      toast.error('State JSON is invalid');
+    }
+  };
+  return <section className="mt-4 space-y-3 rounded-md border border-yellow-300 bg-yellow-50 p-3 dark:bg-yellow-950/20"><h3 className="font-semibold">Paused at {pausedAt}</h3><p className="text-xs text-slate-600 dark:text-slate-300">Edit state JSON, then resume from the next node. The messages key is kept from the original runtime state.</p><textarea className="field h-64 resize-y bg-white font-mono text-xs dark:bg-slate-950" value={draftText} onChange={(e) => setDraftText(e.target.value)} /><div className="flex gap-2"><button className="primary-btn" onClick={resume}>Resume</button><button className="secondary-btn" onClick={() => onResume(pausedState)}>Skip edits</button></div></section>;
 }
