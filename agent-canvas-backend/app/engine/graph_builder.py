@@ -22,6 +22,8 @@ from app.engine.nodes import (
     build_nlp_node,
     build_output_format_node,
     build_router_node,
+    build_runtime_get_node,
+    build_runtime_set_node,
     build_session_load_node,
     build_session_save_node,
     build_state_get_node,
@@ -309,6 +311,10 @@ def _build_node(node, graph_nodes, mcp_servers):
         return build_state_set_node(config)
     if node_type in {"stateget", "state_get"}:
         return build_state_get_node(config)
+    if node_type in {"runtimeset", "runtime_set"}:
+        return build_runtime_set_node(config)
+    if node_type in {"runtimeget", "runtime_get"}:
+        return build_runtime_get_node(config)
     if node_type in {"dbquery", "db_query"}:
         return build_db_query_node(config, graph_nodes)
     if node_type in {"artifactstore", "artifact_store"}:
