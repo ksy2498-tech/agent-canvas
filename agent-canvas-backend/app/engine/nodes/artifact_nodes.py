@@ -13,7 +13,7 @@ def build_artifact_store_node(config: dict[str, Any]):
     async def node(state: AgentState) -> AgentState:
         key = config.get("key") or config.get("artifact_key") or config.get("artifactKey") or "artifact"
         state_key = config.get("state_key") or config.get("stateKey") or "current_output"
-        output_key = config.get("output_key") or config.get("outputKey") or "current_artifact_id"
+        output_key = config.get("output_key") or config.get("outputKey") or "artifacts.current_id"
         cleanup_source = bool(config.get("cleanup_source") or config.get("cleanupSource") or config.get("clearSourceAfterStore"))
         cleanup_value = config.get("cleanup_value") if "cleanup_value" in config else config.get("cleanupValue", None)
         content = _state_value(state, state_key)
@@ -26,7 +26,9 @@ def build_artifact_store_node(config: dict[str, Any]):
         path = root / f"{artifact_id}.{extension}"
         path.write_text(_serialize_content(content), encoding="utf-8")
 
-        refs = dict(state.get("artifact_refs", {}))
+        artifacts = _artifacts_state(state)
+        refs = dict(artifacts.get("refs", {}))
+        latest_by_key = dict(artifacts.get("latest_by_key", {}))
         ref = {
             "id": artifact_id,
             "key": key,
@@ -36,13 +38,16 @@ def build_artifact_store_node(config: dict[str, Any]):
             "content_type": config.get("content_type") or config.get("contentType") or "text/plain",
         }
         refs[artifact_id] = ref
-        latest_by_key = dict(state.get("latest_artifacts", {}))
         latest_by_key[key] = artifact_id
         updates: AgentState = {
-            "artifact_refs": refs,
-            "latest_artifacts": latest_by_key,
-            output_key: artifact_id,
+            "artifacts": {
+                "current_id": artifact_id,
+                "refs": refs,
+                "latest_by_key": latest_by_key,
+            }
         }
+        if output_key and output_key != "artifacts.current_id":
+            _assign_path(updates, output_key, artifact_id)
         if cleanup_source:
             _assign_cleanup(updates, state, state_key, cleanup_value)
         updates.update(
@@ -66,9 +71,10 @@ def build_artifact_load_node(config: dict[str, Any]):
     async def node(state: AgentState) -> AgentState:
         key = config.get("key", "artifact")
         artifact_id = config.get("artifact_id") or config.get("artifactId") or _state_value(state, config.get("artifact_id_key") or config.get("artifactIdKey"))
-        refs = state.get("artifact_refs", {})
-        latest_artifacts = state.get("latest_artifacts", {})
-        resolved_id = artifact_id or latest_artifacts.get(key) or key
+        artifacts = _artifacts_state(state)
+        refs = artifacts.get("refs", {})
+        latest_by_key = artifacts.get("latest_by_key", {})
+        resolved_id = artifact_id or latest_by_key.get(key) or artifacts.get("current_id") or key
         ref = refs.get(resolved_id, resolved_id)
         path = Path(config.get("path") or (ref.get("path") if isinstance(ref, dict) else ref or ""))
         content = path.read_text(encoding="utf-8") if path.exists() else ""
@@ -90,6 +96,17 @@ def build_artifact_load_node(config: dict[str, Any]):
 def _artifact_id(key: str) -> str:
     safe_key = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(key)).strip("-._") or "artifact"
     return f"{safe_key}-{uuid.uuid4().hex[:12]}"
+
+
+def _artifacts_state(state: AgentState) -> dict[str, Any]:
+    artifacts = dict(state.get("artifacts", {}) or {})
+    refs = dict(artifacts.get("refs", {}) or {})
+    latest_by_key = dict(artifacts.get("latest_by_key", {}) or {})
+    # Backward-compatible read for older runs/state snapshots.
+    refs.update(state.get("artifact_refs", {}) or {})
+    latest_by_key.update(state.get("latest_artifacts", {}) or {})
+    current_id = artifacts.get("current_id") or state.get("current_artifact_id")
+    return {"current_id": current_id, "refs": refs, "latest_by_key": latest_by_key}
 
 
 def _serialize_content(content: Any) -> str:
