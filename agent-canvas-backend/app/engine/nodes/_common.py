@@ -4,6 +4,7 @@ import asyncio
 import inspect
 from typing import Any, Callable
 
+from app.engine.nodes.state_path import path_value
 from app.engine.state import AgentState
 from app.mcp.client import mcp_client
 
@@ -70,7 +71,7 @@ def read_runtime(runtime: dict[str, Any], section: str, key: str | None = None) 
     section_value = runtime.get(section, {})
     if key is None:
         return section_value
-    return _path_value(section_value, key)
+    return path_value(section_value, key)
 
 
 def append_trace(state: AgentState, node_id: str, label: str, status: str = "ok", **extra: Any) -> AgentState:
@@ -108,16 +109,3 @@ def run_sync(coro):
     except RuntimeError:
         return asyncio.run(coro)
     return loop.create_task(coro)
-
-
-def _path_value(value: Any, key: str | None) -> Any:
-    if not key:
-        return value
-    for part in str(key).split("."):
-        if isinstance(value, dict):
-            value = value.get(part)
-        else:
-            return None
-        if value is None:
-            return None
-    return value

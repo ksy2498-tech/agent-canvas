@@ -5,14 +5,15 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 
 from app.engine.llm_provider import build_chat_model
 from app.engine.nodes._common import append_trace
+from app.engine.nodes.state_path import state_value, tool_args, tool_value
 from app.engine.state import AgentState
 from app.mcp.client import mcp_client
 
 
 def build_llm_node(config: dict[str, Any], mcp_servers: dict[str, Any]):
     attached_tools = config.get("attached_mcp_tools") or config.get("attachedTools") or []
-    auto_tools = [tool for tool in attached_tools if _tool_value(tool, "execution_mode", "executionMode") == "auto"]
-    tool_only = [tool for tool in attached_tools if _tool_value(tool, "execution_mode", "executionMode") == "tool-only"]
+    auto_tools = [tool for tool in attached_tools if tool_value(tool, "execution_mode", "executionMode") == "auto"]
+    tool_only = [tool for tool in attached_tools if tool_value(tool, "execution_mode", "executionMode") == "tool-only"]
     input_key = config.get("input_key") or config.get("inputKey") or "query"
     output_key = config.get("output_key") or config.get("outputKey") or "current_output"
     tool_result_key = config.get("tool_result_key") or config.get("toolResultKey") or output_key
@@ -30,11 +31,11 @@ def build_llm_node(config: dict[str, Any], mcp_servers: dict[str, Any]):
         tool_messages = []
 
         for tool in _select_tool_only_tools(tool_only, state, tool_name_key):
-            server_id = _tool_value(tool, "server_id", "serverId")
-            tool_name = _tool_value(tool, "tool_name", "name")
+            server_id = tool_value(tool, "server_id", "serverId")
+            tool_name = tool_value(tool, "tool_name", "name")
             if server_id in mcp_servers and tool_name:
                 await mcp_client.connect(mcp_servers[server_id])
-                args = _tool_args(state, config, tool_args_key)
+                args = tool_args(state, config, tool_args_key)
                 result = await mcp_client.call_tool(server_id, tool_name, args)
                 tool_messages.append(ToolMessage(content=str(result), tool_call_id=f"{server_id}:{tool_name}"))
         if tool_only and not auto_tools:
@@ -53,8 +54,8 @@ def build_llm_node(config: dict[str, Any], mcp_servers: dict[str, Any]):
         lc_tools = []
         prompt_tool_specs = []
         for tool in auto_tools:
-            server_id = _tool_value(tool, "server_id", "serverId")
-            tool_name = _tool_value(tool, "tool_name", "name")
+            server_id = tool_value(tool, "server_id", "serverId")
+            tool_name = tool_value(tool, "tool_name", "name")
             if server_id in mcp_servers:
                 await mcp_client.connect(mcp_servers[server_id])
                 server_tools = await mcp_client.list_tools(server_id)
@@ -76,7 +77,7 @@ def build_llm_node(config: dict[str, Any], mcp_servers: dict[str, Any]):
         if system_prompt:
             messages.append(SystemMessage(content=system_prompt))
         messages.extend(state.get("messages", []))
-        input_value = _state_value(state, input_key)
+        input_value = state_value(state, input_key)
         if input_value is not None:
             messages.append(HumanMessage(content=_stringify_input(input_value)))
         elif state.get("query") and not messages:
@@ -193,19 +194,10 @@ def _tool_prompt_specs(server_id: str, tools: list[dict[str, Any]]) -> list[dict
 
 
 def _select_tool_only_tools(tools: list[dict[str, Any]], state: AgentState, tool_name_key: str | None) -> list[dict[str, Any]]:
-    selected = str(_state_value(state, tool_name_key) or "").strip() if tool_name_key else ""
+    selected = str(state_value(state, tool_name_key) or "").strip() if tool_name_key else ""
     if not selected:
         return tools
-    return [tool for tool in tools if str(_tool_value(tool, "tool_name", "name") or "").strip() == selected]
-
-
-def _tool_args(state: AgentState, config: dict[str, Any], tool_args_key: str | None) -> dict[str, Any]:
-    if tool_args_key:
-        value = _state_value(state, tool_args_key)
-        if isinstance(value, dict):
-            return value
-    value = config.get("tool_args") or config.get("toolArgs") or {}
-    return value if isinstance(value, dict) else {}
+    return [tool for tool in tools if str(tool_value(tool, "tool_name", "name") or "").strip() == selected]
 
 
 def _stringify_input(value: Any) -> str:
@@ -216,26 +208,3 @@ def _stringify_input(value: Any) -> str:
     except TypeError:
         return str(value)
 
-
-def _state_value(state: AgentState, key: str | None) -> Any:
-    if not key:
-        return None
-    direct = _path_value(state, key)
-    if direct is not None:
-        return direct
-    return _path_value(state.get("node_results", {}), key)
-
-
-def _path_value(value: Any, key: str | None) -> Any:
-    if not key:
-        return None
-    for part in str(key).split("."):
-        if isinstance(value, dict):
-            value = value.get(part)
-        else:
-            return None
-    return value
-
-
-def _tool_value(tool: dict[str, Any], snake_key: str, camel_key: str) -> Any:
-    return tool.get(snake_key) or tool.get(camel_key)

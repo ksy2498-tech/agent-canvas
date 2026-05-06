@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import crud, models, schemas
+from app.auth import get_current_user_id
 from app.database import get_db
 from app.mcp.client import MCPClient, mcp_client
 
@@ -13,6 +14,7 @@ def _draft_server(payload: schemas.MCPServerCreate) -> models.MCPServer:
     return models.MCPServer(
         id="__draft__",
         name=payload.name,
+        owner_id="__draft__",
         scope=payload.scope,
         transport=payload.transport,
         config=payload.config,
@@ -33,18 +35,31 @@ async def _test_draft_server(payload: schemas.MCPServerCreate) -> dict:
 
 
 @router.get("/servers", response_model=list[schemas.MCPServerRead])
-async def list_servers(scope: str | None = Query(default=None), db: AsyncSession = Depends(get_db)):
-    return await crud.list_mcp_servers(db, scope)
+async def list_servers(
+    scope: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    owner_id: str = Depends(get_current_user_id),
+):
+    return await crud.list_mcp_servers(db, owner_id, scope)
 
 
 @router.post("/servers", response_model=schemas.MCPServerRead, status_code=status.HTTP_201_CREATED)
-async def create_server(payload: schemas.MCPServerCreate, db: AsyncSession = Depends(get_db)):
-    return await crud.create_mcp_server(db, payload)
+async def create_server(
+    payload: schemas.MCPServerCreate,
+    db: AsyncSession = Depends(get_db),
+    owner_id: str = Depends(get_current_user_id),
+):
+    return await crud.create_mcp_server(db, payload, owner_id)
 
 
 @router.put("/servers/{server_id}", response_model=schemas.MCPServerRead)
-async def update_server(server_id: str, payload: schemas.MCPServerUpdate, db: AsyncSession = Depends(get_db)):
-    server = await crud.update_mcp_server(db, server_id, payload)
+async def update_server(
+    server_id: str,
+    payload: schemas.MCPServerUpdate,
+    db: AsyncSession = Depends(get_db),
+    owner_id: str = Depends(get_current_user_id),
+):
+    server = await crud.update_mcp_server(db, server_id, payload, owner_id)
     if server is None:
         raise HTTPException(status_code=404, detail="MCP server not found")
     await mcp_client.disconnect(server_id)
@@ -52,8 +67,12 @@ async def update_server(server_id: str, payload: schemas.MCPServerUpdate, db: As
 
 
 @router.delete("/servers/{server_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_server(server_id: str, db: AsyncSession = Depends(get_db)):
-    deleted = await crud.delete_mcp_server(db, server_id)
+async def delete_server(
+    server_id: str,
+    db: AsyncSession = Depends(get_db),
+    owner_id: str = Depends(get_current_user_id),
+):
+    deleted = await crud.delete_mcp_server(db, server_id, owner_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="MCP server not found")
     await mcp_client.disconnect(server_id)
@@ -71,10 +90,13 @@ async def test_server_tools(payload: schemas.MCPServerCreate):
 
 
 @router.get("/servers/{server_id}/tools")
-async def server_tools(server_id: str, db: AsyncSession = Depends(get_db)):
-    server = await crud.get_mcp_server(db, server_id)
+async def server_tools(
+    server_id: str,
+    db: AsyncSession = Depends(get_db),
+    owner_id: str = Depends(get_current_user_id),
+):
+    server = await crud.get_mcp_server(db, server_id, owner_id)
     if server is None:
         raise HTTPException(status_code=404, detail="MCP server not found")
     await mcp_client.connect(server)
     return {"tools": await mcp_client.list_tools(server.id)}
-

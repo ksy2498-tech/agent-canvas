@@ -35,6 +35,8 @@ const nodeTypes = {
 const NODE_DEFAULT_WIDTH = 180;
 const NODE_DEFAULT_HEIGHT = 64;
 const EDGE_INSERT_DISTANCE = 32;
+const EDGE_SELECT_DISTANCE = 24;
+const EDGE_HOVER_SELECT_DELAY = 420;
 
 const nodeSize = (node) => ({
   width: node.width || node.measured?.width || NODE_DEFAULT_WIDTH,
@@ -73,10 +75,13 @@ export default function Canvas() {
   const [edgeMenu, setEdgeMenu] = useState(null);
   const [connectTargetId, setConnectTargetId] = useState(null);
   const [dropEdgeId, setDropEdgeId] = useState(null);
+  const [hoverEdgeId, setHoverEdgeId] = useState(null);
   const { graphId, nodes, edges, setNodes, setEdges, selectNode, pushHistory, saveGraph, edgeBreakpoints, toggleBreakpointOnEdge, undo, setPanelMode } = useGraphStore();
   const selectedNodeRef = useRef(null);
   const selectedEdgeRef = useRef(null);
   const connectionStartRef = useRef(null);
+  const hoverEdgeTimerRef = useRef(null);
+  const hoverEdgeRef = useRef(null);
 
   useEffect(() => { selectedNodeRef.current = nodes.find((n) => n.selected); }, [nodes]);
   useEffect(() => { selectedEdgeRef.current = edges.find((e) => e.selected); }, [edges]);
@@ -93,11 +98,14 @@ export default function Canvas() {
   })), [nodes, connectTargetId]);
   const styledEdges = useMemo(() => edges.map((edge) => {
     if (edge.id === dropEdgeId) {
-      return { ...edge, animated: true, style: { ...(edge.style || {}), stroke: '#2563eb', strokeWidth: 3 } };
+      return { ...edge, interactionWidth: 32, animated: true, style: { ...(edge.style || {}), stroke: '#2563eb', strokeWidth: 3 } };
     }
-    if (edgeBreakpoints[edge.id]) return { ...edge, animated: true, style: { stroke: '#ef4444', strokeDasharray: '6 4' } };
-    return edge;
-  }), [edges, edgeBreakpoints, dropEdgeId]);
+    if (edge.id === hoverEdgeId) {
+      return { ...edge, interactionWidth: 32, animated: true, style: { ...(edge.style || {}), stroke: '#0f766e', strokeWidth: 3 } };
+    }
+    if (edgeBreakpoints[edge.id]) return { ...edge, interactionWidth: 32, animated: true, style: { stroke: '#ef4444', strokeDasharray: '6 4' } };
+    return { ...edge, interactionWidth: 32 };
+  }), [edges, edgeBreakpoints, dropEdgeId, hoverEdgeId]);
   const onNodesChange = useCallback((changes) => setNodes(applyNodeChanges(changes, nodes)), [nodes, setNodes]);
   const onEdgesChange = useCallback((changes) => setEdges(applyEdgeChanges(changes, edges)), [edges, setEdges]);
   const canConnectNodes = useCallback((sourceId, targetId) => {
@@ -125,6 +133,11 @@ export default function Canvas() {
     connectionStartRef.current = null;
     addConnection(connection);
   }, [addConnection]);
+
+  const selectEdge = useCallback((edgeId) => {
+    selectNode(null);
+    setEdges(useGraphStore.getState().edges.map((item) => ({ ...item, selected: item.id === edgeId })));
+  }, [selectNode, setEdges]);
 
   const eventPoint = (event) => {
     const source = event.changedTouches?.[0] || event;
@@ -175,6 +188,29 @@ export default function Canvas() {
     return closest?.distance <= EDGE_INSERT_DISTANCE ? closest : null;
   }, []);
 
+  const closestSelectableEdgeAt = useCallback((flowPoint) => {
+    let closest = null;
+    const currentNodes = useGraphStore.getState().nodes;
+    const currentEdges = useGraphStore.getState().edges;
+    currentEdges.forEach((edge) => {
+      const source = currentNodes.find((node) => node.id === edge.source);
+      const target = currentNodes.find((node) => node.id === edge.target);
+      if (!source || !target) return;
+      const distance = distanceToSegment(flowPoint, nodeCenter(source), nodeCenter(target));
+      if (!closest || distance < closest.distance) closest = { edge, distance };
+    });
+    return closest?.distance <= EDGE_SELECT_DISTANCE ? closest : null;
+  }, []);
+
+  const clearHoverEdgeTimer = useCallback(() => {
+    if (hoverEdgeTimerRef.current) {
+      window.clearTimeout(hoverEdgeTimerRef.current);
+      hoverEdgeTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => clearHoverEdgeTimer(), [clearHoverEdgeTimer]);
+
   const onConnectStart = useCallback((_, params) => {
     if (params?.nodeId && params?.handleType === 'source') {
       connectionStartRef.current = params;
@@ -201,16 +237,42 @@ export default function Canvas() {
     const start = connectionStartRef.current;
     if (!start?.nodeId) {
       if (connectTargetId) setConnectTargetId(null);
+      if (nodeAtPoint({ x: event.clientX, y: event.clientY })) {
+        clearHoverEdgeTimer();
+        hoverEdgeRef.current = null;
+        setHoverEdgeId(null);
+        return;
+      }
+      const flowPoint = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      const nextEdgeId = closestSelectableEdgeAt(flowPoint)?.edge.id || null;
+      if (nextEdgeId !== hoverEdgeRef.current) {
+        hoverEdgeRef.current = nextEdgeId;
+        setHoverEdgeId(nextEdgeId);
+        clearHoverEdgeTimer();
+        if (nextEdgeId) {
+          hoverEdgeTimerRef.current = window.setTimeout(() => {
+            if (hoverEdgeRef.current === nextEdgeId && !connectionStartRef.current) selectEdge(nextEdgeId);
+          }, EDGE_HOVER_SELECT_DELAY);
+        }
+      }
       return;
+    }
+    clearHoverEdgeTimer();
+    if (hoverEdgeRef.current) {
+      hoverEdgeRef.current = null;
+      setHoverEdgeId(null);
     }
     const targetNode = nodeAtPoint({ x: event.clientX, y: event.clientY });
     const nextTargetId = targetNode && canConnectNodes(start.nodeId, targetNode.id) ? targetNode.id : null;
     if (nextTargetId !== connectTargetId) setConnectTargetId(nextTargetId);
-  }, [canConnectNodes, connectTargetId, screenToFlowPosition]);
+  }, [canConnectNodes, clearHoverEdgeTimer, closestSelectableEdgeAt, connectTargetId, screenToFlowPosition, selectEdge]);
 
   const onMouseLeave = useCallback(() => {
     if (connectTargetId) setConnectTargetId(null);
-  }, [connectTargetId]);
+    clearHoverEdgeTimer();
+    hoverEdgeRef.current = null;
+    setHoverEdgeId(null);
+  }, [clearHoverEdgeTimer, connectTargetId]);
 
   const addNodeAtDrop = useCallback((type, position) => {
     const definition = nodeDefinitions[type];
@@ -378,8 +440,8 @@ export default function Canvas() {
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         onNodeClick={(_, node) => selectNode(node.id)}
-        onEdgeClick={(_, edge) => { selectNode(null); setEdges(edges.map((item) => ({ ...item, selected: item.id === edge.id }))); }}
-        onPaneClick={() => { selectNode(null); setEdges(edges.map((item) => ({ ...item, selected: false }))); }}
+        onEdgeClick={(_, edge) => selectEdge(edge.id)}
+        onPaneClick={() => { clearHoverEdgeTimer(); hoverEdgeRef.current = null; setHoverEdgeId(null); selectNode(null); setEdges(edges.map((item) => ({ ...item, selected: false }))); }}
         onDragOver={onDragOver}
         onDragLeave={() => setDropEdgeId(null)}
         onDrop={(event) => {
@@ -394,6 +456,7 @@ export default function Canvas() {
         defaultViewport={{ x: 240, y: 120, zoom: 0.85 }}
         minZoom={0.25}
         maxZoom={1.4}
+        defaultEdgeOptions={{ interactionWidth: 32 }}
       >
         <Background variant="dots" gap={20} size={1} />
         <Controls />

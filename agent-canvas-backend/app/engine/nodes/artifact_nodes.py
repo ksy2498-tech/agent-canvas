@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from app.engine.nodes._common import append_trace, read_runtime, runtime_from_config, write_runtime
+from app.engine.nodes.state_path import assign_path, path_value, state_value
 from app.engine.state import AgentState
 
 
@@ -51,7 +52,7 @@ def build_artifact_store_node(config: dict[str, Any]):
         }
         write_runtime(runtime, "artifacts", artifact_id, ref)
         if output_key and output_key != "artifacts.current_id":
-            _assign_path(updates, output_key, artifact_id)
+            assign_path(updates, output_key, artifact_id)
         if cleanup_source:
             _cleanup_source(updates, runtime, state, source_scope, source_key, cleanup_value)
         updates.update(
@@ -76,7 +77,7 @@ def build_artifact_load_node(config: dict[str, Any]):
     async def node(state: AgentState, run_config: dict[str, Any] | None = None) -> AgentState:
         key = config.get("key", "artifact")
         target_scope = config.get("target_scope") or config.get("targetScope") or "state"
-        artifact_id = config.get("artifact_id") or config.get("artifactId") or _state_value(state, config.get("artifact_id_key") or config.get("artifactIdKey"))
+        artifact_id = config.get("artifact_id") or config.get("artifactId") or state_value(state, config.get("artifact_id_key") or config.get("artifactIdKey"))
         artifacts = _artifacts_state(state)
         refs = artifacts.get("refs", {})
         latest_by_key = artifacts.get("latest_by_key", {})
@@ -90,7 +91,7 @@ def build_artifact_load_node(config: dict[str, Any]):
             runtime = runtime_from_config(run_config)
             write_runtime(runtime, "scratch", output_key, content)
         else:
-            _assign_path(updates, output_key, content)
+            assign_path(updates, output_key, content)
         updates.update(
             append_trace(
                 state,
@@ -126,7 +127,7 @@ def _read_value(state: AgentState, runtime: dict[str, Any], scope: str, key: str
     if scope == "runtime":
         section, _, nested_key = str(key or "").partition(".")
         return read_runtime(runtime, section, nested_key or None)
-    return _state_value(state, key)
+    return state_value(state, key)
 
 
 def _cleanup_source(updates: dict[str, Any], runtime: dict[str, Any], state: AgentState, scope: str, key: str | None, value: Any) -> None:
@@ -154,42 +155,8 @@ def _serialize_content(content: Any) -> str:
 def _assign_cleanup(updates: dict[str, Any], state: AgentState, key: str | None, value: Any) -> None:
     if not key:
         return
-    if _path_value(state, key) is not None:
-        _assign_path(updates, key, value)
+    if path_value(state, key) is not None:
+        assign_path(updates, key, value)
         return
-    if _path_value(state.get("node_results", {}), key) is not None:
-        _assign_path(updates, f"node_results.{key}", value)
-
-
-def _assign_path(target: dict[str, Any], key: str, value: Any) -> None:
-    cursor = target
-    parts = str(key).split(".")
-    for part in parts[:-1]:
-        next_value = cursor.get(part)
-        if not isinstance(next_value, dict):
-            next_value = {}
-            cursor[part] = next_value
-        cursor = next_value
-    cursor[parts[-1]] = value
-
-
-def _state_value(state: AgentState, key: str | None) -> Any:
-    if not key:
-        return None
-    direct = _path_value(state, key)
-    if direct is not None:
-        return direct
-    return _path_value(state.get("node_results", {}), key)
-
-
-def _path_value(value: Any, key: str | None) -> Any:
-    if not key:
-        return None
-    for part in str(key).split("."):
-        if isinstance(value, dict):
-            value = value.get(part)
-        else:
-            return None
-        if value is None:
-            return None
-    return value
+    if path_value(state.get("node_results", {}), key) is not None:
+        assign_path(updates, f"node_results.{key}", value)

@@ -4,6 +4,26 @@ export const api = axios.create({
   baseURL: '/api',
 });
 
+export const getCurrentUserId = () => {
+  // LOGIN TODO: Replace this placeholder with the logged-in user's stable id,
+  // or switch this client to send an Authorization bearer token and let the
+  // backend derive owner_id from that token.
+  if (typeof window === 'undefined') return 'local-user';
+  return window.localStorage.getItem('agentCanvasUserId') || 'local-user';
+};
+
+api.interceptors.request.use((config) => {
+  config.headers = config.headers || {};
+  config.headers['X-User-Id'] = getCurrentUserId();
+  return config;
+});
+
+const streamHeaders = () => ({
+  'Content-Type': 'application/json',
+  Accept: 'text/event-stream',
+  'X-User-Id': getCurrentUserId(),
+});
+
 export const listGraphs = () => api.get('/graphs').then((r) => r.data);
 export const getGraph = (id) => api.get(`/graphs/${id}`).then((r) => r.data);
 export const createGraph = (name) => api.post('/graphs', { name }).then((r) => r.data);
@@ -80,10 +100,7 @@ const readEventStream = async (response, onEvent, errorPrefix = 'Request failed'
 export const runGraph = async (id, query, breakpoints, edgeBreakpoints, onEvent, runId) => {
   const response = await fetch(`/api/graphs/${id}/run`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-    },
+    headers: streamHeaders(),
     body: JSON.stringify({
       query,
       runId,
@@ -98,10 +115,7 @@ export const runGraph = async (id, query, breakpoints, edgeBreakpoints, onEvent,
 export const resumeExecution = async (id, runId, editedState, onEvent) => {
   const response = await fetch(`/api/graphs/${id}/resume`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-    },
+    headers: streamHeaders(),
     body: JSON.stringify({ runId, editedState }),
   });
 

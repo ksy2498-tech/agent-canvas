@@ -4,9 +4,9 @@ import { useGraphStore } from '../../../store/graphStore';
 const providers = ['OpenAI', 'Gemini', 'Claude', 'Custom'];
 const toolHandlingModes = ['bind-tools', 'prompt-only'];
 const defaultModels = {
-  OpenAI: 'gpt-4o-mini',
-  Custom: 'gpt-4o-mini',
-  Gemini: 'gemini-1.5-flash',
+  OpenAI: 'gpt-oss-120b',
+  Custom: 'gpt-oss-120b',
+  Gemini: 'gemini-2.5-flash-lite',
   Claude: 'claude-3-5-haiku-latest',
 };
 

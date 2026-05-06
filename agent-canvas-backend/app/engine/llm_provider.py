@@ -54,10 +54,10 @@ def _require_node_api_key(api_key: Any, provider: str) -> None:
 
 def _default_model(provider: str) -> str:
     if provider in {"gemini", "google", "google gemini"}:
-        return "gemini-1.5-flash"
+        return "gemini-2.5-flash-lite"
     if provider in {"claude", "anthropic"}:
         return "claude-3-5-haiku-latest"
-    return "gpt-4o-mini"
+    return "gpt-oss-120b"
 
 
 def _headers_to_dict(headers: Any) -> dict[str, str]:

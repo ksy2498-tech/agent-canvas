@@ -47,6 +47,7 @@ class GraphUpdate(GraphCreate):
 
 class GraphRead(BaseModel):
     id: str
+    owner_id: str
     name: str
     description: str | None
     created_at: datetime
@@ -81,6 +82,7 @@ class MCPServerUpdate(MCPServerCreate):
 
 class MCPServerRead(MCPServerCreate):
     id: str
+    owner_id: str
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 

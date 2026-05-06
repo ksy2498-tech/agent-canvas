@@ -6,6 +6,7 @@ from typing import Any
 from langchain_core.messages import messages_from_dict, messages_to_dict
 
 from app.engine.nodes._common import SAFE_BUILTINS, append_trace, runtime_from_config, write_runtime
+from app.engine.nodes.state_path import assign_path, state_value
 from app.engine.state import AgentState
 
 
@@ -28,40 +29,6 @@ def _session_id(config: dict[str, Any], state: AgentState) -> str | None:
             return str(value)
     value = state.get("session_id") or config.get("session_id") or config.get("sessionId") or state.get("query")
     return str(value) if value else None
-
-
-def _state_value(state: AgentState, key: str | None) -> Any:
-    if not key:
-        return None
-    direct = _path_value(state, key)
-    if direct is not None:
-        return direct
-    return _path_value(state.get("node_results", {}), key)
-
-
-def _path_value(value: Any, key: str | None) -> Any:
-    if not key:
-        return None
-    for part in str(key).split("."):
-        if isinstance(value, dict):
-            value = value.get(part)
-        else:
-            return None
-        if value is None:
-            return None
-    return value
-
-
-def _assign_path(target: dict[str, Any], key: str, value: Any) -> None:
-    parts = str(key).split(".")
-    cursor = target
-    for part in parts[:-1]:
-        next_value = cursor.get(part)
-        if not isinstance(next_value, dict):
-            next_value = {}
-            cursor[part] = next_value
-        cursor = next_value
-    cursor[parts[-1]] = value
 
 
 def _serialize_value(key: str, value: Any) -> Any:
@@ -112,7 +79,7 @@ def build_session_load_node(config: dict[str, Any]):
         updates: AgentState = {}
         if target in {"state", "both"}:
             state_key = output_key if output_key.startswith("metadata.") or output_key.startswith("node_results.") else f"metadata.{output_key}"
-            _assign_path(updates, state_key, _session_summary(loaded_session))
+            assign_path(updates, state_key, _session_summary(loaded_session))
         updates.update(
             append_trace(
                 state,
@@ -139,8 +106,8 @@ def build_session_save_node(config: dict[str, Any]):
             return append_trace(state, config.get("_node_id", "session_save"), config.get("_label", "Session Save"), status="skipped", reason="missing session_id")
         payload = {}
         for key in keys:
-            value = _state_value(state, key)
-            _assign_path(payload, key, _serialize_value(key, value))
+            value = state_value(state, key)
+            assign_path(payload, key, _serialize_value(key, value))
         with sqlite3.connect(path) as conn:
             if (config.get("mode") or "overwrite") == "append":
                 row = conn.execute("SELECT payload FROM sessions WHERE session_id = ?", (session_id,)).fetchone()

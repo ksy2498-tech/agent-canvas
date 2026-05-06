@@ -2,13 +2,14 @@ import re
 from typing import Any
 
 from app.engine.nodes._common import append_trace, runtime_from_config, write_runtime
+from app.engine.nodes.state_path import assign_path, state_value
 from app.engine.state import AgentState
 
 
 def build_nlp_node(config: dict[str, Any]):
     async def node(state: AgentState, run_config: dict[str, Any] | None = None) -> AgentState:
         input_key = config.get("input_key") or config.get("inputKey") or "current_output"
-        text = _state_value(state, input_key) or state.get("query", "")
+        text = state_value(state, input_key) or state.get("query", "")
         engine = str(config.get("engine", "kiwi")).lower()
         analysis_type = config.get("analysis_type") or config.get("analysisType") or "morpheme"
         result_target = config.get("result_target") or config.get("resultTarget") or "runtime"
@@ -31,9 +32,9 @@ def build_nlp_node(config: dict[str, Any]):
             runtime = runtime_from_config(run_config)
             write_runtime(runtime, "nlp", output_key, result)
         if result_target in {"state", "both"}:
-            _assign_path(updates, output_key, result)
+            assign_path(updates, output_key, result)
         if result_target == "runtime" and summary_key:
-            _assign_path(updates, summary_key, _summary(result))
+            assign_path(updates, summary_key, _summary(result))
         updates.update(
             append_trace(
                 state,
@@ -89,37 +90,3 @@ def _analyze_tokens(text: str, engine: str) -> tuple[list[dict[str, Any]], str |
 
 def _regex_tokens(text: str) -> list[dict[str, Any]]:
     return [{"form": token, "pos": "UNK"} for token in re.findall(r"\w+", text)]
-
-
-def _state_value(state: AgentState, key: str | None) -> Any:
-    if not key:
-        return None
-    direct = _path_value(state, key)
-    if direct is not None:
-        return direct
-    return _path_value(state.get("node_results", {}), key)
-
-
-def _assign_path(target: dict[str, Any], key: str, value: Any) -> None:
-    cursor = target
-    parts = str(key).split(".")
-    for part in parts[:-1]:
-        next_value = cursor.get(part)
-        if not isinstance(next_value, dict):
-            next_value = {}
-            cursor[part] = next_value
-        cursor = next_value
-    cursor[parts[-1]] = value
-
-
-def _path_value(value: Any, key: str | None) -> Any:
-    if not key:
-        return None
-    for part in str(key).split("."):
-        if isinstance(value, dict):
-            value = value.get(part)
-        else:
-            return None
-        if value is None:
-            return None
-    return value

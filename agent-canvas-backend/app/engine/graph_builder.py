@@ -30,17 +30,19 @@ from app.engine.nodes import (
     build_state_set_node,
 )
 from app.engine.nodes._common import make_runtime, runtime_preview
-from app.engine.state import AgentState
+from app.engine.state import AgentState, merge_dicts
 from app.mcp.registry import resolve_mcp_servers
 
 NodeFn = Callable[..., Awaitable[AgentState]]
-PENDING_RUNS: dict[str, dict[str, Any]] = {}
+PendingRunKey = tuple[str, str]
+PENDING_RUNS: dict[PendingRunKey, dict[str, Any]] = {}
 
 
 async def build_and_run(
     graph_id: str,
     query: str,
     db: AsyncSession,
+    owner_id: str,
     run_id: str | None = None,
     breakpoints: dict[str, Any] | None = None,
     edge_breakpoints: dict[str, Any] | None = None,
@@ -53,7 +55,7 @@ async def build_and_run(
     runtime["run_id"] = run_id
     breakpoints = breakpoints or {}
     edge_breakpoints = edge_breakpoints or {}
-    graph_record = await crud.get_graph(db, graph_id)
+    graph_record = await crud.get_graph(db, graph_id, owner_id)
     if graph_record is None:
         yield {"type": "error", "message": "Graph not found", "runId": run_id}
         return
@@ -68,7 +70,7 @@ async def build_and_run(
         return
 
     try:
-        compiled, condition_fns, node_names = await _compile_graph(graph_id, db, nodes, edges, start_node_ids)
+        compiled, condition_fns, node_names = await _compile_graph(graph_id, db, nodes, edges, start_node_ids, owner_id)
     except Exception as exc:
         yield {"type": "error", "message": f"Failed to build graph: {exc}", "nodeId": None, "runId": run_id}
         return
@@ -93,7 +95,11 @@ async def build_and_run(
                 if node:
                     yield {"type": "node_start", "nodeId": node.id, "label": node.label, "runId": run_id}
                 if update:
-                    state.update(update)
+                    update = dict(update)
+                    runtime_updates = update.pop("runtime_updates", None)
+                    if runtime_updates:
+                        _merge_runtime(runtime, runtime_updates)
+                    _merge_state_update(state, update)
                 if node:
                     preview = runtime_preview(runtime)
                     yield {
@@ -105,12 +111,13 @@ async def build_and_run(
                         "node_results": state.get("node_results", {}),
                         "update": update or {},
                         "state": state,
+                        "runtime": runtime,
                         "runtime_preview": preview,
                         "runId": run_id,
                     }
                     if node.id in breakpoints:
                         next_node_ids = await _next_node_ids(node.id, state, edges, condition_fns, node_names, run_config)
-                        PENDING_RUNS[run_id] = {
+                        PENDING_RUNS[_pending_key(owner_id, run_id)] = {
                             "graph_id": graph_id,
                             "query": query,
                             "state": state,
@@ -119,6 +126,7 @@ async def build_and_run(
                             "breakpoints": breakpoints,
                             "edge_breakpoints": edge_breakpoints,
                             "paused_at": node.id,
+                            "owner_id": owner_id,
                         }
                         yield {
                             "type": "paused",
@@ -126,12 +134,13 @@ async def build_and_run(
                             "at": node.id,
                             "label": node.label,
                             "state": state,
+                            "runtime": runtime,
                             "runtime_preview": preview,
                             "nextNodeIds": next_node_ids,
                             "breakpoint": breakpoints.get(node.id),
                         }
                         return
-        PENDING_RUNS.pop(run_id, None)
+        PENDING_RUNS.pop(_pending_key(owner_id, run_id), None)
         yield {
             "type": "done",
             "runId": run_id,
@@ -139,14 +148,21 @@ async def build_and_run(
             "trace": state.get("trace", []),
             "node_results": state.get("node_results", {}),
             "state": state,
+            "runtime": runtime,
             "runtime_preview": runtime_preview(runtime),
         }
     except Exception as exc:
-        yield {"type": "error", "message": str(exc), "nodeId": None, "state": state, "runtime_preview": runtime_preview(runtime), "runId": run_id}
+        yield {"type": "error", "message": str(exc), "nodeId": None, "state": state, "runtime": runtime, "runtime_preview": runtime_preview(runtime), "runId": run_id}
 
 
-async def resume_run(run_id: str, edited_state: dict[str, Any], db: AsyncSession) -> AsyncGenerator[dict[str, Any], None]:
-    pending = PENDING_RUNS.get(run_id)
+async def resume_run(
+    run_id: str,
+    edited_state: dict[str, Any],
+    db: AsyncSession,
+    owner_id: str,
+) -> AsyncGenerator[dict[str, Any], None]:
+    pending_key = _pending_key(owner_id, run_id)
+    pending = PENDING_RUNS.get(pending_key)
     if not pending:
         yield {"type": "error", "message": "No paused run found", "runId": run_id}
         return
@@ -154,7 +170,7 @@ async def resume_run(run_id: str, edited_state: dict[str, Any], db: AsyncSession
     runtime = pending.get("runtime") or make_runtime(run_id)
     next_node_ids = list(pending.get("next_node_ids") or [])
     if not next_node_ids:
-        PENDING_RUNS.pop(run_id, None)
+        PENDING_RUNS.pop(pending_key, None)
         yield {
             "type": "done",
             "runId": run_id,
@@ -162,6 +178,7 @@ async def resume_run(run_id: str, edited_state: dict[str, Any], db: AsyncSession
             "trace": state.get("trace", []),
             "node_results": state.get("node_results", {}),
             "state": state,
+            "runtime": runtime,
             "runtime_preview": runtime_preview(runtime),
         }
         return
@@ -171,6 +188,7 @@ async def resume_run(run_id: str, edited_state: dict[str, Any], db: AsyncSession
         graph_id=pending["graph_id"],
         query=pending.get("query") or state.get("query") or "",
         db=db,
+        owner_id=owner_id,
         run_id=run_id,
         breakpoints=breakpoints,
         edge_breakpoints=pending.get("edge_breakpoints") or {},
@@ -190,18 +208,42 @@ def _apply_edited_state(existing: dict[str, Any], edited: dict[str, Any]) -> Age
     return state
 
 
+def _merge_runtime(runtime: dict[str, Any], updates: dict[str, Any]) -> None:
+    for section, value in (updates or {}).items():
+        if isinstance(value, dict) and isinstance(runtime.get(section), dict):
+            runtime[section].update(value)
+        else:
+            runtime[section] = value
+
+
+def _pending_key(owner_id: str, run_id: str) -> PendingRunKey:
+    return owner_id, run_id
+
+
+def _merge_state_update(state: AgentState, update: dict[str, Any]) -> None:
+    for key, value in update.items():
+        if key in {"node_results", "metadata", "artifacts"} and isinstance(value, dict):
+            state[key] = merge_dicts(state.get(key, {}), value)
+        elif key in {"messages", "trace"} and isinstance(value, list):
+            state[key] = [*(state.get(key) or []), *value]
+        else:
+            state[key] = value
+
+
+
 async def _compile_graph(
     graph_id: str,
     db: AsyncSession,
     nodes: list[Any],
     edges: list[Any],
     start_node_ids: list[str] | None,
+    owner_id: str,
 ):
     attached = []
     for node in nodes:
         config = node.config or {}
         attached.extend(config.get("attached_mcp_tools") or config.get("attachedTools") or [])
-    mcp_servers = await resolve_mcp_servers(db, graph_id, attached)
+    mcp_servers = await resolve_mcp_servers(db, graph_id, attached, owner_id)
 
     builder = StateGraph(AgentState)
     condition_fns: dict[str, Callable[..., Awaitable[str]]] = {}

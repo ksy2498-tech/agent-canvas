@@ -90,6 +90,9 @@ export const useGraphStore = create((set, get) => ({
   pausedAt: null,
   runningNodeId: null,
   trace: [],
+  runMessages: [],
+  runHistory: [],
+  pausedRunId: null,
   validationErrors: [],
 
   setNodes: (nodes) => set({ nodes }),
@@ -99,6 +102,11 @@ export const useGraphStore = create((set, get) => ({
   setPanelMode: (panelMode) => set({ panelMode }),
   setRunningNodeId: (runningNodeId) => set({ runningNodeId }),
   setTrace: (trace) => set({ trace }),
+  setRunMessages: (runMessages) =>
+    set((state) => ({ runMessages: typeof runMessages === 'function' ? runMessages(state.runMessages) : runMessages })),
+  setRunHistory: (runHistory) =>
+    set((state) => ({ runHistory: typeof runHistory === 'function' ? runHistory(state.runHistory) : runHistory })),
+  setPausedRunId: (pausedRunId) => set({ pausedRunId }),
 
   pushHistory: () =>
     set((state) => ({ history: [...state.history, snapshot(state.nodes, state.edges)].slice(-20) })),

@@ -21,6 +21,7 @@ class AgentState(TypedDict, total=False):
     current_output: str
     node_results: Annotated[dict, merge_dicts]
     metadata: Annotated[dict, merge_dicts]
+    runtime_updates: Annotated[dict, merge_dicts]
     session_id: Optional[str]
     artifacts: Annotated[dict, merge_dicts]
     db_result: Optional[Any]

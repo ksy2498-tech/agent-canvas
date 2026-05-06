@@ -8,8 +8,8 @@ export default function RuntimeGetPanel({ node }) {
   const updateNodeData = useGraphStore((s) => s.updateNodeData);
   const data = {
     id: node.id,
-    section: 'scratch',
-    key: 'value',
+    section: 'tool_results',
+    key: 'tool_result',
     targetScope: 'state',
     targetSection: 'scratch',
     outputKey: 'current_output',

@@ -16,6 +16,7 @@ class Graph(Base):
     __tablename__ = "graphs"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=new_uuid)
+    owner_id: Mapped[str] = mapped_column(String, default="local-user", server_default="local-user", nullable=False, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
@@ -66,6 +67,7 @@ class MCPServer(Base):
     __tablename__ = "mcp_servers"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=new_uuid)
+    owner_id: Mapped[str] = mapped_column(String, default="local-user", server_default="local-user", nullable=False, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     scope: Mapped[str] = mapped_column(String, nullable=False, index=True)
     transport: Mapped[str] = mapped_column(String, nullable=False)

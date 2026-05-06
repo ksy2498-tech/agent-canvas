@@ -7,7 +7,7 @@ const groups = [
   ['LLM', ['llm']],
   ['MCP', ['mcpTool']],
   ['Logic', ['code', 'router', 'condition']],
-  ['Session / State', ['sessionLoad', 'sessionSave', 'stateSet', 'stateGet']],
+  ['Session / State', ['sessionLoad', 'sessionSave', 'stateSet', 'stateGet', 'runtimeSet', 'runtimeGet']],
   ['Database', ['dbConnection', 'dbQuery']],
   ['Artifact', ['artifactStore', 'artifactLoad']],
   ['I/O', ['httpRequest', 'inputTransform', 'outputFormat']],

@@ -46,6 +46,17 @@ export function Textarea({ value, onChange, rows = 4, placeholder }) {
   return <textarea className="field resize-y" rows={rows} value={value || ''} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />;
 }
 
+export function listToText(value) {
+  return Array.isArray(value) ? value.join(', ') : '';
+}
+
+export function textToList(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export function BaseFields({ data, setData, children, mcpModes }) {
   return (
     <div className="space-y-4">

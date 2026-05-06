@@ -6,6 +6,7 @@ from sse_starlette.sse import EventSourceResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import crud, schemas
+from app.auth import get_current_user_id
 from app.database import get_db
 from app.engine.graph_builder import build_and_run, resume_run
 
@@ -19,14 +20,20 @@ async def _event_stream(generator: AsyncGenerator[dict, None]) -> AsyncGenerator
 
 
 @router.post("/graphs/{graph_id}/run")
-async def run_graph(graph_id: str, payload: schemas.RunRequest, db: AsyncSession = Depends(get_db)):
-    graph = await crud.get_graph(db, graph_id)
+async def run_graph(
+    graph_id: str,
+    payload: schemas.RunRequest,
+    db: AsyncSession = Depends(get_db),
+    owner_id: str = Depends(get_current_user_id),
+):
+    graph = await crud.get_graph(db, graph_id, owner_id)
     if graph is None:
         raise HTTPException(status_code=404, detail="Graph not found")
     generator = build_and_run(
         graph_id=graph_id,
         query=payload.query,
         db=db,
+        owner_id=owner_id,
         run_id=getattr(payload, "runId", None) or None,
         breakpoints=payload.breakpoints,
         edge_breakpoints=payload.edgeBreakpoints,
@@ -35,13 +42,19 @@ async def run_graph(graph_id: str, payload: schemas.RunRequest, db: AsyncSession
 
 
 @router.post("/graphs/{graph_id}/resume")
-async def resume_graph(graph_id: str, payload: schemas.ResumeRequest, db: AsyncSession = Depends(get_db)):
-    graph = await crud.get_graph(db, graph_id)
+async def resume_graph(
+    graph_id: str,
+    payload: schemas.ResumeRequest,
+    db: AsyncSession = Depends(get_db),
+    owner_id: str = Depends(get_current_user_id),
+):
+    graph = await crud.get_graph(db, graph_id, owner_id)
     if graph is None:
         raise HTTPException(status_code=404, detail="Graph not found")
     generator = resume_run(
         run_id=payload.runId,
         edited_state=payload.editedState,
         db=db,
+        owner_id=owner_id,
     )
     return EventSourceResponse(_event_stream(generator))
